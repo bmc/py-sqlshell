@@ -9,7 +9,7 @@ it supports history, command editing, and rudimentary completion.
 Installing this software installs a `sqlshell` command in your Python
 environment.
 
-**Note:** See [Maintenance Warning](#maintenance-warning), below.
+**Note:** See [Maintenance Warnings](#maintenance-warnings), below.
 
 ## Motivation
 
@@ -36,9 +36,11 @@ check out a copy of this repository. Then, you'll use the Python
 ```shell
 $ pip install build
 $ cd py-sqlshell
-$ python -m build
-$ pip install dist/*.whl
+$ ./build.sh clean build
+$ pip install dist/sqlshell-0.1.2-py3-none-any.whl
 ```
+
+(Alter the version stamp in the ".whl" file as necessary.)
 
 This will install the package, as well as its dependencies, and it will
 create a `sqlshell` command in your Python's `bin` directory.
@@ -191,7 +193,7 @@ $ cd ~
 $ sqlshell sqlite:///test.db
 ```
 
-## Maintenance Warning
+## Maintenance Warnings
 
 I built this tool for my personal use. If you find it useful, as a tool
 or even as an example of how to build a `readline`-based command shell in
@@ -199,6 +201,10 @@ less than 1,000 lines of code, that's great. But this isn't intended to be
 commercial-grade software, and I'm not aggressively maintaining it. (That's
 one reason it isn't in PyPI right now.) Don't expect me to jump on feature
 requests.
+
+**Windows users**: You're on your own. Sorry. I haven't tested `sqlshell`
+on Windows, and I likely won't. If it works for you, that's terrific. If it
+doesn't, I'm unwilling to debug why.
 
 ## License
 
