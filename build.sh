@@ -8,7 +8,7 @@
 
 usage() {
     echo "Usage: $0 target ..." >&2
-    echo "Valid targets: build, clean >&2" >&2
+    echo "Valid targets: build, clean, docker >&2" >&2
     exit 1
 }
 
@@ -34,7 +34,7 @@ targets=""
 for t in $*
 do
     case $t in
-        build|clean)
+        build|clean|docker)
             targets="$targets $t"
             ;;
         *)
@@ -54,6 +54,11 @@ do
 
         build)
             run "python -m build" || exit 1
+            ;;
+        docker)
+            cd docker
+            run "docker build -t bclapper/py-sqlshell-test ." || exit 1
+            cd ..
             ;;
     esac
 done

@@ -1,0 +1,5 @@
+bind -e
+bind '^R' em-inc-search-prev
+edit on
+python:bind -e
+python:bind ^I rl_complete

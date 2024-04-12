@@ -1,0 +1,4 @@
+. $HOME/python/bin/activate
+
+alias ls="/usr/bin/ls -CF --color"
+alias d=ls
