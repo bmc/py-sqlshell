@@ -42,10 +42,9 @@ and build settings.
 
 Run `sqlshell -h` to see usage output.
 
-You'll pass `sqlshell` a SQLAlchemy-compatible database URL, such has
-`mysql+mysqlconnector://user:password@localhost/mydatabase`. With databases
+You'll pass `sqlshell` a SQLAlchemy-compatible database URL. With databases
 other than SQLite3, you'll need to install supporting packages in order to
-connect to the databasae (e.g., `python-mysql-connector`).
+connect to the database. See [Examples](#examples), below.
 
 `sqlshell` uses the Python `readline` package, so it'll use either GNU
 Readline or Editline under the covers, depending on your operating system
