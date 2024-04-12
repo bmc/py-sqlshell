@@ -7,6 +7,12 @@ database you're using.
 
 ## Installation
 
+`py-sqlshell` is not currently in PyPI. I may add it at some point; I may
+not.
+
+In the meantime, you can install it easily enough from source. First,
+check out a copy of this repository. Then, run the following commands:
+
 ```shell
 $ pip install build
 $ cd py-sqlshell
@@ -16,6 +22,8 @@ $ pip install dist/*.whl
 
 This will install the package, as well as its dependencies, and it will
 create a `sqlshell` command in your Python's `bin` directory.
+
+**Note:** `sqlshell` requires Python 3.10 or better.
 
 ## Usage
 
