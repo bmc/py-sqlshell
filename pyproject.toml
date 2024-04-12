@@ -3,7 +3,6 @@ name = "sqlshell"
 version = "0.1.4"
 dependencies = [
   "click>=8.1.7",
-  "pandas>=2.2.1",
   "SQLAlchemy>=2.0.29"
 ]
 description = "A very simple SQL shell, using SQLAlchemy."
