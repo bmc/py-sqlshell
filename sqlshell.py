@@ -33,13 +33,16 @@ NAME = "sqlshell"
 VERSION = "0.1.1"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
-LIBEDIT_BINDINGS_FILE = Path("~/.editrc").expanduser()
+EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
 READLINE_BINDINGS_FILE = Path("~/.inputrc").expanduser()
 DEFAULT_SCREEN_WIDTH = 79
 DEFAULT_HISTORY_FILE = Path("~/.sqlshell-history").expanduser()
 
 
 class Command(StrEnum):
+    """
+    Non-SQL commands the shell supports.
+    """
     EXIT = ".exit"
     EXPORT = ".export"
     HELP1 = ".help"
@@ -51,6 +54,8 @@ class Command(StrEnum):
     URL = ".url"
 
 
+# This is a series of (command, explanation) tuples. show_help() will wrap
+# the explanations.
 HELP = (
     (f"{Command.EXIT.value} or Ctrl-D", "Quit"),
     (f"{Command.EXPORT.value} <table> <path>",
@@ -152,7 +157,7 @@ def init_bindings_and_completion(engine: Engine) -> None:
             return None
 
     if (readline.__doc__ is not None) and ("libedit" in readline.__doc__):
-        init_file = LIBEDIT_BINDINGS_FILE
+        init_file = EDITLINE_BINDINGS_FILE
         print(f'Using editline (libedit).')
         completion_binding = "bind '^I' rl_complete"
     else:
@@ -168,7 +173,7 @@ def init_bindings_and_completion(engine: Engine) -> None:
     readline.set_completer(command_completer)
 
 
-def display(
+def display_results(
     columns: list[str],
     data: list[Dict[str, Any]],
     limit: int,
@@ -290,7 +295,7 @@ def run_sql(
                         data.append(row)
 
                 elapsed = perf_counter() - start
-                display(columns, data, limit, total, elapsed)
+                display_results(columns, data, limit, total, elapsed)
 
     except sqlalchemy.exc.ResourceClosedError:
         # Thrown when attempting to get a result from something that
@@ -487,6 +492,11 @@ def show_history_matching(line: str) -> None:
 
 
 def export_table(table_name: str, where: Path, engine: Engine) -> None:
+    """
+    Export a table to a text file. If the file ("where") ends in ".csv",
+    the table is exported to a CSV file. If the file ends in ".json",
+    the table is exported in JSON Lines format.
+    """
     from sqlalchemy.engine.result import MappingResult
 
     def export_csv(mappings: MappingResult) -> None:
@@ -549,7 +559,6 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
 
     init_history(history_path)
     init_bindings_and_completion(engine)
-
 
     prompt = f"({engine.name}) > "
 
