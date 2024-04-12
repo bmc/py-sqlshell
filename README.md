@@ -17,7 +17,9 @@ This package is not currently in PyPI. I may add it at some point; I may
 not.
 
 In the meantime, you can install it easily enough from source. First,
-check out a copy of this repository. Then, run the following commands:
+check out a copy of this repository. Then, you'll use the Python
+[build](https://build.pypa.io/en/stable/index.html) tool to build the
+`sqlshell` package, which you can then use `pip` to install.
 
 ```shell
 $ pip install build
@@ -29,7 +31,12 @@ $ pip install dist/*.whl
 This will install the package, as well as its dependencies, and it will
 create a `sqlshell` command in your Python's `bin` directory.
 
-**Note:** `sqlshell` requires Python 3.10 or better.
+`sqlshell` uses the newer
+[Python package standard](https://packaging.python.org/en/latest/overview/)
+for building and packaging. See `pyproject.toml` in this repo for package
+and build settings.
+
+**Warning:** `sqlshell` requires Python 3.10 or better.
 
 ## Usage
 
