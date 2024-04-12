@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
@@ -197,8 +197,10 @@ def init_bindings_and_completion(engine: Engine) -> None:
         init_file = READLINE_BINDINGS_FILE
         completion_binding = "Control-I: rl_complete"
 
-    print(f'Loading bindings from "{init_file}"')
-    readline.read_init_file(init_file)
+    if init_file.exists():
+        print(f'Loading bindings from "{init_file}"')
+        readline.read_init_file(init_file)
+
     # Ensure that tab = complete
     readline.parse_and_bind(completion_binding)
     # Set up the completer.
