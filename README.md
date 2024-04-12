@@ -203,8 +203,9 @@ one reason it isn't in PyPI right now.) Don't expect me to jump on feature
 requests.
 
 **Windows users**: You're on your own. Sorry. I haven't tested `sqlshell`
-on Windows, and I likely won't. If it works for you, that's terrific. If it
-doesn't, I'm unwilling to debug why.
+on Windows, and I likely won't. It runs fine for me on Linux and MacOS. If it
+works for you on Windows, that's terrific. If it doesn't, I'm unwilling to
+spend time figuring out why.
 
 ## License
 
