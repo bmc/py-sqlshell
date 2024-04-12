@@ -38,6 +38,70 @@ of the non-SQL commands it supports. Or just start entering SQL.
 Though `sqlshell` should work with any SQLAlchemy-supported RDBMS, I have
 only tested it against MySQL, PostgreSQL, and SQLite3.
 
+### Commands
+
+With the exception of `?`, which is an alias for `.help`, all of the non-SQL
+commands `sqlshell` supports start with `.`.
+
+Once you get into `sqlshell`, type `?` or `.help` at the prompt to see a list
+of the internal commands. Anything else you type is assumed to be SQL and passed
+along to the database.
+
+### Command Completion
+
+`sqlshell` has some rudimentary support for command completion of its
+`.` commands. In addition, the `.schema` command, which takes a single table
+name parameter, supports table name completion. Again, type `.help` for a
+complete explanation.
+
+## Examples
+
+### PostgreSQL
+
+Suppose I have a PostgreSQL server running on my local machine, and it
+contains a database called "test" accessible by user "scott" using the
+(awful) password "tiger". I've decided to use the `pg8000` Python package
+to access PostgreSQL from Python. So, the first step is:
+
+```shell
+$ pip install pg8000
+```
+
+Once that package is installed in my Python environment, I can use `sqlshell`
+to connect to my database:
+
+```shell
+$ sqlshell postgresql+pg8000://scott:tiger@localhost/test
+```
+
+### MySQL
+
+Suppose, instead, my "test" database is in a MySQL server running on my
+local machine, with the same user ("scott") and terrible password ("tiger").
+I've decided to use the `mysql-connector-python` package to access MySQL
+from Python. The first step is to install that package:
+
+```shell
+$ pip install mysql-connector-python
+```
+
+Now, I can access my database using `sqlshell`:
+
+```shell
+$ sqlshell mysql+mysqlconnector://scott:tiger@localhost/test"
+```
+
+### SQLite3
+
+In this case, my test database is in file "test.db" in my home directory.
+Since Python's standard library has built-in support for SQLite3, I don't
+have to install anything first.
+
+```shell
+$ cd ~
+$ sqlshell sqlite:///test.db
+```
+
 ## License
 
 This software is released under the
