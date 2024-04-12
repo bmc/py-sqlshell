@@ -1,13 +1,19 @@
 # py-sqlshell
 
-This is a simple SQL command line that works with any RDBMS that's supported
-by [SQLAlchemy](https://www.sqlalchemy.org/), providing a common set of
-commands and a query output format that looks the same, no matter what
-database you're using.
+This is a simple SQL command shell that works with any RDBMS that's
+supported by [SQLAlchemy](https://www.sqlalchemy.org/), providing a common set
+of commands and a query output format that looks the same, no matter what
+database you're using. In addition, it uses Python `readline` module, so
+it supports history, command editing, and rudimentary completion.
+
+Installing this software installs a `sqlshell` command in your Python
+environment.
+
+**Note:** See [Maintenance Warning](#maintenance-warning), below.
 
 ## Installation
 
-`py-sqlshell` is not currently in PyPI. I may add it at some point; I may
+This package is not currently in PyPI. I may add it at some point; I may
 not.
 
 In the meantime, you can install it easily enough from source. First,
@@ -46,6 +52,9 @@ of the non-SQL commands it supports. Or just start entering SQL.
 Though `sqlshell` should work with any SQLAlchemy-supported RDBMS, I have
 only tested it against MySQL, PostgreSQL, and SQLite3.
 
+See [Examples](#examples), below, for how you might use `sqlshell` with
+those RDBMS systems.
+
 ### Commands
 
 With the exception of `?`, which is an alias for `.help`, all of the non-SQL
@@ -55,7 +64,7 @@ Once you get into `sqlshell`, type `?` or `.help` at the prompt to see a list
 of the internal commands. Anything else you type is assumed to be SQL and passed
 along to the database.
 
-### Command Completion
+#### Command Completion
 
 `sqlshell` has some rudimentary support for command completion of its
 `.` commands. In addition, the `.schema` command, which takes a single table
@@ -109,6 +118,13 @@ have to install anything first.
 $ cd ~
 $ sqlshell sqlite:///test.db
 ```
+
+## Maintenance Warning
+
+I built this tool for my personal use. If you find it useful, as a tool
+or even as an example of how to build a `readline`-based command shell,
+that's great. But this isn't commercial-grade software, and I'm not
+aggressively maintaining it. (That's one reason it isn't in PyPI right now.)
 
 ## License
 
