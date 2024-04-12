@@ -20,7 +20,7 @@ from contextlib import suppress
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 import click
 import sqlalchemy
@@ -28,7 +28,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 LIBEDIT_BINDINGS_FILE = Path("~/.editrc").expanduser()
@@ -167,7 +167,11 @@ def init_bindings_and_completion(engine: Engine) -> None:
 
 
 def display(
-    columns: list[str], data: list[Dict[str, Any]], limit: int, total: int
+    columns: list[str],
+    data: list[Dict[str, Any]],
+    limit: int,
+    total: int,
+    elapsed: Union[float, None] = None
 ) -> None:
     """
     Display the results of a select.
@@ -180,6 +184,8 @@ def display(
     total   - the total number of rows. If limit is 0, total must match the
               length of data. Otherwise, total is the number of rows that
               would have been displayed, if limit were 0.
+    elapsed - the elapsed time to run the query that produced the results,
+              or None not to display an elapsed time
     """
     if len(data) == 0:
         print("No data.")
@@ -240,13 +246,16 @@ def display(
 
     if limit > 0:
         suffix = "s" if total > 1 else ""
-        print(f"{len(data):,} of {total:,} row{suffix}.")
+        epilog = f"{len(data):,} of {total:,} row{suffix}"
     else:
         assert total == len(data)
         suffix = "s" if len(data) > 1 else ""
-        print(f"{len(data):,} row{suffix}.")
+        epilog = f"{len(data):,} row{suffix}"
 
-    print()
+    if elapsed is not None:
+        epilog = f"{epilog} ({elapsed:.03f} seconds)"
+
+    print(f"{epilog}\n")
     return
 
 
@@ -259,10 +268,13 @@ def run_sql(
     """
     Run a SQL statement.
     """
+    from time import perf_counter
+
     try:
         if echo_statement:
             print(f"{sql}\n")
 
+        start = perf_counter()
         with Session(engine) as session:
             with session.execute(sqlalchemy.text(sql)) as cursor:
                 mappings = cursor.mappings()
@@ -275,7 +287,8 @@ def run_sql(
                     if (limit == 0) or (total <= limit):
                         data.append(row)
 
-                display(columns, data, limit, total)
+                elapsed = perf_counter() - start
+                display(columns, data, limit, total, elapsed)
 
     except sqlalchemy.exc.ResourceClosedError:
         # Thrown when attempting to get a result from something that
