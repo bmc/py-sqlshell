@@ -19,10 +19,11 @@ import sys
 import textwrap
 import traceback
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 import click
 import sqlalchemy
@@ -30,13 +31,14 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
 READLINE_BINDINGS_FILE = Path("~/.inputrc").expanduser()
 DEFAULT_SCREEN_WIDTH = 79
 DEFAULT_HISTORY_FILE = Path("~/.sqlshell-history").expanduser()
+DEFAULT_CONFIG_FILE = Path("~/.sqlshell.cfg").expanduser()
 
 
 class Command(StrEnum):
@@ -53,6 +55,19 @@ class Command(StrEnum):
     SCHEMA = ".schema"
     TABLES = ".tables"
     URL = ".url"
+
+
+@dataclass(frozen=True)
+class ConnectionConfig:
+    """
+    A single connection configuration from the configuration file.
+    """
+    url: str
+    history_file: Optional[Path]
+
+
+class ConfigurationError(Exception):
+    pass
 
 
 # This is a series of (command, explanation) tuples. show_help() will wrap
@@ -578,6 +593,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
     """
     print(f"{NAME}, version {VERSION}\n")
 
+    print(f"Connecting to {db_url}")
     engine = sqlalchemy.create_engine(db_url)
 
     init_history(history_path)
@@ -675,6 +691,61 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
             break
 
 
+def load_config(config: Path) -> Dict[str, ConnectionConfig]:
+    """
+    Reads the configuration file, if it exists. Returns a dictionary
+    where the keys are names (sections) from the configuration and the
+    values are ConnectionConfig objects. The dictionary will be empty,
+    if there is no configuration file or if the configuration file is
+    empty. Raises ConfigurationError on error.
+    """
+    import tomllib
+    from string import Template
+
+    if not config.exists():
+        return {}
+
+    try:
+        with open(config, mode='rb') as f:
+            data = tomllib.load(f)
+    except Exception as e:
+        raise ConfigurationError(f'Unable to read "{config}": {e}')
+
+    # For environment substitution, we want a reference to a non-existent
+    # variable to substitute "", rather than throw an error (as with
+    # Template.substitute()) or leave the reference intact (as with
+    # Template.safe_substitute()). To do that, we simply use a custom
+    # dictionary class.
+    class EnvDict(dict):
+        def __init__(self, *args, **kw):
+            self.update(*args, **kw)
+
+        def __getitem__(self, key) -> Any:
+            return super().get(key, "")
+
+    env = EnvDict(**os.environ)
+
+    result: dict[str, ConnectionConfig] = {}
+    for key, values in data.items():
+        url = values.get("url")
+        if url is None:
+            raise ConfigurationError(
+                f'"{config}": Section "{key}" has no "url" setting.'
+            )
+
+        t = Template(url)
+        url = t.substitute(env)
+
+        history = values.get("history")
+        if history is not None:
+            t = Template(history)
+            history = Path(t.substitute(env)).expanduser()
+
+        result[key] = ConnectionConfig(url=url, history_file=history)
+
+    return result
+
+
 @click.command(context_settings=CLICK_CONTEXT_SETTINGS)
 @click.option(
     "-H",
@@ -682,15 +753,26 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
     is_flag=False,
     default=str(DEFAULT_HISTORY_FILE),
     show_default=True,
-    help="Specify location of history file.",
+    help="Specify location of the default history file. This can be "
+         "overridden, on a per-connection basis, in the configuration."
 )
-@click.argument("db_url", required=True, type=str)
-def main(db_url: str, history: str) -> None:
+@click.option(
+    "-c",
+    "--config",
+    is_flag=False,
+    default=str(DEFAULT_CONFIG_FILE),
+    show_default=True,
+    type=click.Path(dir_okay=False, exists=True),
+    help="The location of the optional configuration file."
+)
+@click.argument("db_spec", required=True, type=str)
+def main(db_spec: str, history: str, config: str) -> None:
     """
     Prompt for SQL statements and run them against the specified database.
-    The <DB_URL> parameter is a SQLAlchemy-compatible URL. Depending on the
-    database, you may need to install support packages. This program
-    requires SQLAlchemy.
+    The <DB_SPEC> parameter is either a SQLAlchemy-compatible URL or the name
+    of a section in the configuration file from which the URL can be read.
+    Note: To connect to some databases, you will need to install support
+    packages.
 
     Examples:
 
@@ -721,7 +803,16 @@ def main(db_url: str, history: str) -> None:
     editline, it will read those values from ".editrc" in your home directory.
     The shell will display the path of the file it is loading.
     """
-    run_command_loop(db_url, Path(history))
+    configuration = load_config(Path(config))
+
+    if (conn_cfg := configuration.get(db_spec)) is not None:
+        url = conn_cfg.url
+        history_file = conn_cfg.history_file or history
+    else:
+        url = db_spec
+        history_file = history
+
+    run_command_loop(url, Path(history_file))
 
 
 if __name__ == "__main__":

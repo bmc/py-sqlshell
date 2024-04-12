@@ -54,7 +54,8 @@ and build settings.
 
 Run `sqlshell -h` to see usage output.
 
-You'll pass `sqlshell` a SQLAlchemy-compatible database URL. With databases
+You'll pass `sqlshell` a SQLAlchemy-compatible database URL or the name of a
+section in the [configuration file][#configuration]. With databases
 other than SQLite3, you'll need to install supporting packages in order to
 connect to the database. See [Examples](#examples), below.
 
@@ -91,6 +92,57 @@ complete explanation.
 
 There is _no_ support for SQL completion.
 
+## Configuration
+
+`sqlshell` supports an optional configuration file, located in
+`.sqlshell.cfg` by default. You can override the location of the configuration
+file with the `-c` (`--config`) command line option.
+
+The configuration file provides two benefits:
+
+- Rather than pass the SQLAlchemy database URL on the command line, you can
+  store it in a section in the configuration file, and then simply pass the
+  section name into `sqlshell`.
+- You can also specify an alternate history file to use for the connection,
+  allowing you to have a history file per connection, if you want.
+
+Here's an example:
+
+```toml
+[postgres-test]
+url = "postgresql+pg8000://user:password@localhost/test"
+history = "~/.sqlshell-pg-test-history"
+```
+
+With that configuration in place, you can simply invoke `sqlshell` as follows,
+to connect to your test PostgreSQL database:
+
+```shell
+$ sqlshell postgres-test
+```
+
+The configuration file is in [TOML](https://toml.io/en) format. You can
+have as many sections as you want. In each section:
+
+- `url` is required
+- `history` is optional; if omitted, `sqlshell` will use the main history
+  file (or whatever alternate file you specify with `-H`).
+
+You can reference environment variables in both `history` and `url`; they will
+be substituted accordingly. If you refer to a nonexistent environment variable,
+an empty string will be substitute.
+
+In `history`, you can also use a leading `~/` to refer to your home directory.
+The following three history entries are equivalent:
+
+```toml
+history = "~/.sqlshell-history"
+history = "$HOME/.sqlshell-history"
+history = "${HOME}/.sqlshell-history"
+```
+
+See `sample.cfg` in this repository for an example.
+
 ## Examples
 
 ### PostgreSQL
@@ -125,7 +177,7 @@ $ pip install mysql-connector-python
 Now, I can access my database using `sqlshell`:
 
 ```shell
-$ sqlshell mysql+mysqlconnector://scott:tiger@localhost/test"
+$ sqlshell mysql+mysqlconnector://scott:tiger@localhost/test
 ```
 
 ### SQLite3
