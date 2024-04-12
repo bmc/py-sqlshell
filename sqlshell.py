@@ -1,7 +1,9 @@
 """
-A quick and dirty SQL command shell, with many limitations but a better
-output format than, say, the "sqlite3" command. Works on any SQLAlchemy
-URL, though you might have to install suitable packages first.
+This is a simple SQL command shell that works with any RDBMS that's supported
+by SQLAlchemy, providing a common set of commands and a query output format
+that looks the same, no matter what database you're using. In addition, it uses
+Python `readline` module, so it supports history, command editing, and
+rudimentary completion.
 
 Run with -h or --help for an extended usage message.
 """
