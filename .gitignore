@@ -1,0 +1,4 @@
+/venv
+/.envrc
+/dist
+/*.egg-info

@@ -1,0 +1,68 @@
+[project]
+name = "sqlshell"
+version = "0.1.0"
+dependencies = [
+  "click>=8.1.7",
+  "pandas>=2.2.1",
+  "SQLAlchemy>=2.0.29"
+]
+description = "A very simple SQL shell, using SQLAlchemy."
+requires-python = ">= 3.10"
+authors = [
+  {name = "Brian Clapper", email = "bmc@clapper.org"}
+]
+maintainers = [
+  {name = "Brian Clapper", email = "bmc@clapper.org"}
+]
+classifiers = [
+  # How mature is this project? Common values are
+  #   3 - Alpha
+  #   4 - Beta
+  #   5 - Production/Stable
+  "Development Status :: 4 - Beta",
+
+  "Intended Audience :: Developers",
+  "Topic :: Database",
+  "License :: OSI Approved :: Apache Software License",
+
+  # Specify the Python versions you support here.
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/bmc/py-sqlshell"
+
+[project.scripts]
+sqlshell = "sqlshell:main"
+
+[build-system]
+# Use https://github.com/pypa/build
+# (python -m build)
+# See https://packaging.python.org/en/latest/glossary/#term-Build-Frontend
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+#requires = ["hatchling"]
+#build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 79
+target-version = ['py311']
+extend-exclude = '''
+^/venv
+'''
+
+[tool.isort]
+profile = "black"
+src_paths = ["*.py"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.pyright]
+venvPath = "venv"
+include = ["./*.py"]
+exclude = ["./tasks.py", "bin"]
+
