@@ -77,6 +77,8 @@ along to the database.
 name parameter, supports table name completion. Again, type `.help` for a
 complete explanation.
 
+There is _no_ support for SQL completion.
+
 ## Examples
 
 ### PostgreSQL
@@ -128,9 +130,11 @@ $ sqlshell sqlite:///test.db
 ## Maintenance Warning
 
 I built this tool for my personal use. If you find it useful, as a tool
-or even as an example of how to build a `readline`-based command shell,
-that's great. But this isn't commercial-grade software, and I'm not
-aggressively maintaining it. (That's one reason it isn't in PyPI right now.)
+or even as an example of how to build a `readline`-based command shell in
+less than 1,000 lines of code, that's great. But this isn't intended to be
+commercial-grade software, and I'm not aggressively maintaining it. (That's
+one reason it isn't in PyPI right now.) Don't expect me to jump on feature
+requests.
 
 ## License
 
