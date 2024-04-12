@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
@@ -762,7 +762,7 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
     is_flag=False,
     default=str(DEFAULT_CONFIG_FILE),
     show_default=True,
-    type=click.Path(dir_okay=False, exists=True),
+    type=click.Path(dir_okay=False),
     help="The location of the optional configuration file."
 )
 @click.argument("db_spec", required=True, type=str)
