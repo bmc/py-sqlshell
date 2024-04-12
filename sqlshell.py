@@ -43,6 +43,7 @@ class Command(StrEnum):
     """
     Non-SQL commands the shell supports.
     """
+
     EXIT = ".exit"
     EXPORT = ".export"
     HELP1 = ".help"
@@ -58,42 +59,54 @@ class Command(StrEnum):
 # the explanations.
 HELP = (
     (f"{Command.EXIT.value} or Ctrl-D", "Quit"),
-    (f"{Command.EXPORT.value} <table> <path>",
-     'Export the contents of table to a file. If <path> ends in ".csv", '
-     'the table will be exported to a CSV file. If <path> ends in ".json", '
-     "the table will be dumped in JSON Lines format, with each row as a "
-     "JSON object in the file. You can use ~ in your paths as a shorthand "
-     'for your home directory (e.g., "~/table.json")'),
+    (
+        f"{Command.EXPORT.value} <table> <path>",
+        'Export the contents of table to a file. If <path> ends in ".csv", '
+        'the table will be exported to a CSV file. If <path> ends in ".json", '
+        "the table will be dumped in JSON Lines format, with each row as a "
+        "JSON object in the file. You can use ~ in your paths as a shorthand "
+        'for your home directory (e.g., "~/table.json")',
+    ),
     (f"{Command.HELP1.value} or {Command.HELP2.value}", "This display"),
-    (f"{Command.HISTORY.value} [<n>]",
-     "Show the history. If <n> is supplied, show the last <n> history "
-     "items. <n> of 0 is the same as omitting <n>."),
-    (f"{Command.HISTORY.value} re",
-     "Show all history items matching regular expression <re>. If your pattern "
-     r"contains spaces or regular expression backslash sequences (e.g., \s), "
-     "be sure to enclose it in quotes."),
-    (f"{Command.LIMIT.value} <n>",
-     "Show only <n> rows from a SELECT. 0 means unlimited."),
+    (
+        f"{Command.HISTORY.value} [<n>]",
+        "Show the history. If <n> is supplied, show the last <n> history "
+        "items. <n> of 0 is the same as omitting <n>.",
+    ),
+    (
+        f"{Command.HISTORY.value} re",
+        "Show all history items matching regular expression <re>. If your "
+        "pattern contains spaces or regular expression backslash sequences "
+        r"(e.g., \s), be sure to enclose it in quotes.",
+    ),
+    (
+        f"{Command.LIMIT.value} <n>",
+        "Show only <n> rows from a SELECT. 0 means unlimited.",
+    ),
     (f"{Command.LIMIT.value}", "Show the current limit setting"),
     (f"{Command.SCHEMA.value} <table>", "Show the schema for table <table>"),
     (f"{Command.TABLES.value}", "Show all tables in the database"),
-    (f"{Command.TABLES.value} <re>",
-     "Show all tables in the database whose names match the specified regular "
-     "expression. Matching is case-blind. If your pattern contains spaces or "
-     r"regular expression backslash sequences (e.g., \s), be sure to enclose "
-     "it in quotes."),
-    (f"{Command.URL.value}", "Show the current database URL")
+    (
+        f"{Command.TABLES.value} <re>",
+        "Show all tables in the database whose names match the specified "
+        "regular expression. Matching is case-blind. If your pattern contains "
+        r"spaces or regular expression backslash sequences (e.g., \s), be sure "
+        "to enclose it in quotes.",
+    ),
+    (f"{Command.URL.value}", "Show the current database URL"),
 )
 
 HELP_EPILOG = (
     "Anything else is interpreted as SQL.",
     "",
-    ("Note that you can use tab-completion on the dot-commands. Additionally, "
-     "as a special case, you can tab-complete available table names after "
-     f'typing "{Command.SCHEMA.value} ". If there are multiple matches for '
-     """the string you've typed (e.g., ".h"), you may need to press the TAB """
-     "key twice to see the choices. Completion for SQL statements is not "
-     "available.")
+    (
+        "Note that you can use tab-completion on the dot-commands. Also, "
+        "as a special case, you can tab-complete available table names after "
+        f'typing "{Command.SCHEMA.value} ". If there are multiple matches for '
+        """the string you've typed (e.g., ".h"), you may need to press the """
+        "TAB key twice to see the choices. Completion for SQL statements is "
+        "not available."
+    ),
 )
 
 
@@ -124,6 +137,7 @@ def init_bindings_and_completion(engine: Engine) -> None:
     """
     Initialize readline bindings.
     """
+
     def command_completer(text: str, state: int) -> str | None:
         """
         This is a readline completer that will complete any command other
@@ -141,8 +155,11 @@ def init_bindings_and_completion(engine: Engine) -> None:
             case [s, *_] if s == Command.SCHEMA.value:
                 # Special case: Options in this case are the tables in the
                 # database.
-                options = [t.name for t in get_tables(engine)
-                           if t.name.lower().startswith(text.lower())]
+                options = [
+                    t.name
+                    for t in get_tables(engine)
+                    if t.name.lower().startswith(text.lower())
+                ]
             case [s, *_] if s in commands:
                 # An already completed command. There's nothing to complete.
                 options = []
@@ -158,10 +175,10 @@ def init_bindings_and_completion(engine: Engine) -> None:
 
     if (readline.__doc__ is not None) and ("libedit" in readline.__doc__):
         init_file = EDITLINE_BINDINGS_FILE
-        print(f'Using editline (libedit).')
+        print(f"Using editline (libedit).")
         completion_binding = "bind '^I' rl_complete"
     else:
-        print(f'Using GNU readline.')
+        print(f"Using GNU readline.")
         init_file = READLINE_BINDINGS_FILE
         completion_binding = "Control-I: rl_complete"
 
@@ -178,7 +195,7 @@ def display_results(
     data: list[Dict[str, Any]],
     limit: int,
     total: int,
-    elapsed: Union[float, None] = None
+    elapsed: Union[float, None] = None,
 ) -> None:
     """
     Display the results of a select.
@@ -204,13 +221,13 @@ def display_results(
         else:
             return str(val)
 
-    def make_output_line(fields: list[str],
-                         delim: str = "|",
-                         pad_char: str = " ") -> str:
+    def make_output_line(
+        fields: list[str], delim: str = "|", pad_char: str = " "
+    ) -> str:
         return (
-            f"{delim}{pad_char}" +
-            f"{pad_char}{delim}{pad_char}".join(fields) +
-            f"{pad_char}{delim}"
+            f"{delim}{pad_char}"
+            + f"{pad_char}{delim}{pad_char}".join(fields)
+            + f"{pad_char}{delim}"
         )
 
     # For each column, figure out how wide to make it in the display, based on
@@ -270,7 +287,7 @@ def run_sql(
     sql: str,
     engine: sqlalchemy.Engine,
     limit: int = 0,
-    echo_statement: bool = False
+    echo_statement: bool = False,
 ) -> None:
     """
     Run a SQL statement.
@@ -325,8 +342,10 @@ def print_help() -> None:
     try:
         screen_width = int(s_width)
     except ValueError as e:
-        print("The COLUMNS environment variable has an invalid value of "
-              f'"{s_width}". Using screen width of {DEFAULT_SCREEN_WIDTH}.')
+        print(
+            "The COLUMNS environment variable has an invalid value of "
+            f'"{s_width}". Using screen width of {DEFAULT_SCREEN_WIDTH}.'
+        )
 
     separator = " - "
     text_width = screen_width - len(separator) - prefix_width
@@ -352,6 +371,7 @@ def show_schema(table_name: str, engine: Engine) -> None:
     """
     Print the schema for a table.
     """
+
     def show_create_table_ddl(t: sqlalchemy.Table) -> None:
         """
         Get the CREATE TABLE statement from SQLAlchemy, and display that.
@@ -385,11 +405,11 @@ def show_schema(table_name: str, engine: Engine) -> None:
     # TODO: Extend for other database types.
     sql = None
     match engine.name:
-        case 'sqlite':
+        case "sqlite":
             sql = f"pragma table_info([{table_name}])"
-        case 'mysql':
+        case "mysql":
             sql = f"desc {table_name}"
-        case 'postgresql':
+        case "postgresql":
             sql = (
                 "select column_name, data_type, character_maximum_length, "
                 "is_nullable, column_default from information_schema.columns "
@@ -436,7 +456,6 @@ def show_tables_matching(line: str, engine: Engine) -> None:
 
     except ValueError as e:
         print(str(e))
-
 
 
 def format_history_item(line: str, index: int) -> str:
@@ -526,17 +545,21 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
     sql = f"select * from {table_name}"
 
     match where.suffix:
-        case '.csv':
+        case ".csv":
             export = export_csv
-        case '.json':
+        case ".json":
             export = export_json
-        case '':
-            print("Cannot determine export format, because export file "
-                  "has no extension.")
+        case "":
+            print(
+                "Cannot determine export format, because export file "
+                "has no extension."
+            )
             return
         case ext:
-            print("Cannot determine export format, because file extension "
-                  f'"{ext}" is not ".csv" or ".json".')
+            print(
+                "Cannot determine export format, because file extension "
+                f'"{ext}" is not ".csv" or ".json".'
+            )
             return
 
     try:
@@ -614,9 +637,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
 
                 case [Command.EXPORT.value, table_name, path]:
                     export_table(
-                        table_name=table_name,
-                        where=Path(path),
-                        engine=engine
+                        table_name=table_name, where=Path(path), engine=engine
                     )
 
                 case [Command.EXPORT.value, *_]:
@@ -661,7 +682,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
     is_flag=False,
     default=str(DEFAULT_HISTORY_FILE),
     show_default=True,
-    help="Specify location of history file."
+    help="Specify location of history file.",
 )
 @click.argument("db_url", required=True, type=str)
 def main(db_url: str, history: str) -> None:
