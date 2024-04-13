@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, cast, Dict, Optional, Union
 
 import click
 import sqlalchemy
@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
@@ -39,6 +39,12 @@ READLINE_BINDINGS_FILE = Path("~/.inputrc").expanduser()
 DEFAULT_SCREEN_WIDTH = 79
 DEFAULT_HISTORY_FILE = Path("~/.sqlshell-history").expanduser()
 DEFAULT_CONFIG_FILE = Path("~/.sqlshell.cfg").expanduser()
+
+
+class EngineName(StrEnum):
+    POSTGRES = "postgresql"
+    MYSQL = "mysql"
+    SQLITE = "sqlite"
 
 
 class Command(StrEnum):
@@ -50,6 +56,7 @@ class Command(StrEnum):
     HELP1 = ".help"
     HELP2 = "?"
     HISTORY = ".history"
+    INDEXES = ".indexes"
     LIMIT = ".limit"
     QUIT1 = ".exit"
     QUIT2 = ".quit"
@@ -99,6 +106,11 @@ HELP = (
         r"(e.g., \s), be sure to enclose it in quotes.",
     ),
     (
+        f"{Command.INDEXES.value} <table_name>",
+        "Display the indexes for <table_name>. Uses database-native commands, "
+        "where possible. Otherwise, SQLAlchemy index information is displayed."
+    ),
+    (
         f"{Command.LIMIT.value} <n>",
         "Show only <n> rows from a SELECT. 0 means unlimited.",
     ),
@@ -121,10 +133,8 @@ HELP_EPILOG = (
     (
         "Note that you can use tab-completion on the dot-commands. Also, "
         "as a special case, you can tab-complete available table names after "
-        f'typing "{Command.SCHEMA.value} ". If there are multiple matches for '
-        """the string you've typed (e.g., ".h"), you may need to press the """
-        "TAB key twice to see the choices. Completion for SQL statements is "
-        "not available."
+        f'typing "{Command.SCHEMA.value}" or "{Command.INDEXES.value}". '
+        "Completion for SQL statements is not available."
     ),
 )
 
@@ -171,7 +181,7 @@ def init_bindings_and_completion(engine: Engine) -> None:
         match tokens:
             case []:
                 options = commands
-            case [s, *_] if s == Command.SCHEMA.value:
+            case [s, *_] if s in (Command.SCHEMA.value, Command.INDEXES.value):
                 # Special case: Options in this case are the tables in the
                 # database.
                 options = [
@@ -216,6 +226,7 @@ def display_results(
     data: list[Dict[str, Any]],
     limit: int,
     total: int,
+    no_results_message: str | None = None,
     elapsed: Union[float, None] = None,
 ) -> None:
     """
@@ -223,17 +234,20 @@ def display_results(
 
     Parameters:
 
-    columns - the names of the columns, in order
-    data    - list of rows. Each row is a dictionary of (column -> value)
-    limit   - the current row limit (for display), or 0
-    total   - the total number of rows. If limit is 0, total must match the
-              length of data. Otherwise, total is the number of rows that
-              would have been displayed, if limit were 0.
-    elapsed - the elapsed time to run the query that produced the results,
-              or None not to display an elapsed time
+    columns            - the names of the columns, in order
+    data               - list of rows. Each row is a dictionary of
+                         (column -> value)
+    limit              - the current row limit (for display), or 0
+    total              - the total number of rows. If limit is 0, total must
+                         match the length of data. Otherwise, total is the
+                         number of rows that would have been displayed, if
+                         limit were 0.
+    no_results_message - the message to display if the results are empty.
+    elapsed            - the elapsed time to run the query that produced the
+                         results, or None not to display an elapsed time
     """
     if len(data) == 0:
-        print("No data.")
+        print(no_results_message or "No data.")
         return
 
     def get_datum_as_string(row: Dict[str, Any], col: str) -> str:
@@ -309,6 +323,7 @@ def run_sql(
     engine: sqlalchemy.Engine,
     limit: int = 0,
     echo_statement: bool = False,
+    no_results_message: str | None = None,
 ) -> None:
     """
     Run a SQL statement.
@@ -321,25 +336,34 @@ def run_sql(
 
         start = perf_counter()
         with Session(engine) as session:
-            with session.execute(sqlalchemy.text(sql)) as cursor:
-                mappings = cursor.mappings()
-                columns = list(mappings.keys())
+            try:
+                with session.execute(sqlalchemy.text(sql)) as cursor:
+                    mappings = cursor.mappings()
+                    columns = list(mappings.keys())
 
-                data = []
-                total = 0
-                while (row := mappings.fetchone()) is not None:
-                    total += 1
-                    if (limit == 0) or (total <= limit):
-                        data.append(row)
+                    data = []
+                    total = 0
+                    while (row := mappings.fetchone()) is not None:
+                        total += 1
+                        if (limit == 0) or (total <= limit):
+                            data.append(row)
 
-                elapsed = perf_counter() - start
-                display_results(columns, data, limit, total, elapsed)
+                    elapsed = perf_counter() - start
+                    display_results(
+                        columns=columns,
+                        data=data,
+                        limit=limit,
+                        total=total,
+                        elapsed=elapsed,
+                        no_results_message=no_results_message
+                    )
+                session.commit()
 
-    except sqlalchemy.exc.ResourceClosedError:
-        # Thrown when attempting to get a result from something that
-        # doesn't produce results, such as an INSERT, UPDATE, or DELETE.
-        # Just return quietly.
-        pass
+            except sqlalchemy.exc.ResourceClosedError:
+                # Thrown when attempting to get a result from something that
+                # doesn't produce results, such as an INSERT, UPDATE, or DELETE.
+                # Just return quietly. Make sure to commit any work, though.
+                session.commit()
 
     except sqlalchemy.exc.SQLAlchemyError as e:
         print(str(e))
@@ -426,11 +450,11 @@ def show_schema(table_name: str, engine: Engine) -> None:
     # TODO: Extend for other database types.
     sql = None
     match engine.name:
-        case "sqlite":
+        case EngineName.SQLITE:
             sql = f"pragma table_info([{table_name}])"
-        case "mysql":
+        case EngineName.MYSQL:
             sql = f"desc {table_name}"
-        case "postgresql":
+        case EngineName.POSTGRES:
             sql = (
                 "select column_name, data_type, character_maximum_length, "
                 "is_nullable, column_default from information_schema.columns "
@@ -477,6 +501,80 @@ def show_tables_matching(line: str, engine: Engine) -> None:
 
     except ValueError as e:
         print(str(e))
+
+
+def show_indexes(table_name: str, engine: Engine) -> None:
+    """
+    Given a table name, display the indexes (if any), associated with the
+    table.
+    """
+    NO_RESULTS_MESSAGE = "No indexes."
+
+    def show_generic_indexes() -> None:
+        inspector = sqlalchemy.inspect(engine)
+        indexes = inspector.get_indexes(table_name)
+        adjusted_data: list[dict[str, str]] = []
+        for idx in indexes:
+            adj_dict: dict[str, str] = dict()
+            adj_dict["table"] = table_name
+            adj_dict["name"] = idx.get("name") or "?"
+            columns = (cast(list, idx.get("column_names")) or [])
+            adj_dict["columns"] = ", ".join(columns)
+            unique = "true" if idx.get("unique", False) else "false"
+            adj_dict["unique"] = unique
+            adjusted_data.append(adj_dict)
+
+        display_results(
+            columns=["table", "name", "columns", "unique"],
+            data=adjusted_data,
+            limit=0,
+            total=len(adjusted_data),
+            no_results_message=NO_RESULTS_MESSAGE
+        )
+
+    # Validate that the table exists first, using SQLAlchemy. This strategy
+    # ensures a consistent "not found" message across database types. It's
+    # especially helpful with SQLite, where issuing the "pragma" statement
+    # for a non-existent table just returns nothing, not even an error message
+    # (even in the sqlite3 shell).
+    tables = get_tables(engine)
+    match [t for t in tables if t.name.lower() == table_name.lower()]:
+        case []:
+            print(f'Table "{table_name}" does not exist.')
+            return
+        case [_]:
+            pass
+        case many:
+            raise Exception(f'Too many matches for "{table_name}": {many}')
+
+    # If there's a SQL statement that will generate a nice tabular result,
+    # use that. Otherwise, just pull the "CREATE TABLE" statement out of
+    # SQLAlchemy, and display that.
+    #
+    # TODO: Extend for other database types.
+    sql = None
+    match engine.name:
+        case EngineName.SQLITE:
+            sql = (
+                "select * from sqlite_master where type = 'index' and "
+                f"tbl_name = '{table_name}'"
+            )
+        case EngineName.MYSQL:
+            sql = f"show index from {table_name}"
+        case EngineName.POSTGRES:
+            sql = f"select * from pg_indexes where tablename = '{table_name}'"
+        case _:
+            pass
+
+    if sql is None:
+        show_generic_indexes()
+    else:
+        run_sql(
+            sql=sql,
+            engine=engine,
+            echo_statement=True,
+            no_results_message=NO_RESULTS_MESSAGE
+        )
 
 
 def format_history_item(line: str, index: int) -> str:
@@ -635,6 +733,12 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                 case [(Command.HELP1.value | Command.HELP2.value), *_]:
                     print(f"{Command.HELP1.value} and {Command.HELP2.value} "
                           "take no parameters.")
+
+                case [Command.INDEXES.value, table_name]:
+                    show_indexes(table_name, engine)
+
+                case [Command.INDEXES.value, *_]:
+                    print(f"Usage: {Command.INDEXES.value} <table_name>")
 
                 case [Command.LIMIT.value]:
                     print(f"Limit is currently {limit:,}.")
