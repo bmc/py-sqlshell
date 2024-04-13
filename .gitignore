@@ -1,5 +1,5 @@
 /venv
 /.envrc
 /dist
-/*.egg-info
+*.egg-info
 __pycache__
