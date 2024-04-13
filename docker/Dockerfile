@@ -1,7 +1,8 @@
 # This Dockerfile is used to build an image in which I can easily test
 # sqlshell on a Linux distribution.
 
-FROM debian:latest
+# 3.11 on Debian bullseye
+FROM debian:12
 
 RUN apt-get update
 RUN apt -y install git
