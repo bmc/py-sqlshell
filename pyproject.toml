@@ -1,12 +1,12 @@
 [project]
 name = "sqlshell"
-version = "0.1.4"
+dynamic = ["version", "readme"]
 dependencies = [
   "click>=8.1.7",
   "SQLAlchemy>=2.0.29"
 ]
 description = "A very simple SQL shell, using SQLAlchemy."
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 authors = [
   {name = "Brian Clapper", email = "bmc@clapper.org"}
 ]
@@ -26,7 +26,6 @@ classifiers = [
 
   # Specify the Python versions you support here.
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
@@ -41,14 +40,20 @@ sqlshell = "sqlshell:main"
 # Use https://github.com/pypa/build
 # (python -m build)
 # See https://packaging.python.org/en/latest/glossary/#term-Build-Frontend
+# and https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
-#requires = ["hatchling"]
-#build-backend = "hatchling.build"
+
+[tool.setuptools.packages.find]
+exclude = ["docker*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "sqlshell.VERSION"}
+readme = {file = ["README.md"]}
 
 [tool.black]
 line-length = 79
-target-version = ['py310']
+target-version = ['py311']
 extend-exclude = '''
 ^/venv
 '''
