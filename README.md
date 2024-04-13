@@ -50,7 +50,7 @@ create a `sqlshell` command in your Python's `bin` directory.
 for building and packaging. See `pyproject.toml` in this repo for package
 and build settings.
 
-**Warning:** `sqlshell` requires Python 3.10 or better.
+**Warning:** `sqlshell` requires Python 3.11 or better.
 
 ## Usage
 
