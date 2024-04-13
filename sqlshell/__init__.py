@@ -46,12 +46,13 @@ class Command(StrEnum):
     Non-SQL commands the shell supports.
     """
 
-    EXIT = ".exit"
     EXPORT = ".export"
     HELP1 = ".help"
     HELP2 = "?"
     HISTORY = ".history"
     LIMIT = ".limit"
+    QUIT1 = ".exit"
+    QUIT2 = ".quit"
     SCHEMA = ".schema"
     TABLES = ".tables"
     URL = ".url"
@@ -73,7 +74,10 @@ class ConfigurationError(Exception):
 # This is a series of (command, explanation) tuples. show_help() will wrap
 # the explanations.
 HELP = (
-    (f"{Command.EXIT.value} or Ctrl-D", "Quit"),
+    (
+        f"{Command.QUIT1.value}, {Command.QUIT2.value}, or Ctrl-D",
+        f"Quit {NAME}."
+    ),
     (
         f"{Command.EXPORT.value} <table> <path>",
         'Export the contents of table to a file. If <path> ends in ".csv", '
@@ -82,7 +86,7 @@ HELP = (
         "JSON object in the file. You can use ~ in your paths as a shorthand "
         'for your home directory (e.g., "~/table.json")',
     ),
-    (f"{Command.HELP1.value} or {Command.HELP2.value}", "This display"),
+    (f"{Command.HELP1.value} or {Command.HELP2.value}", "Show this help."),
     (
         f"{Command.HISTORY.value} [<n>]",
         "Show the history. If <n> is supplied, show the last <n> history "
@@ -604,8 +608,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
     prompt = f"({engine.name}) > "
 
     print()
-    print(".help or ?      - get help")
-    print(".exit or Ctrl-D - quit")
+    print(f".help for help on {NAME} commands")
 
     digits = re.compile(r"^\d+$")
 
@@ -619,8 +622,12 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                 case []:
                     pass
 
-                case [Command.EXIT, *_]:
+                case [(Command.QUIT1 | Command.QUIT2)]:
                     break
+
+                case [(Command.QUIT1 | Command.QUIT2), *_]:
+                    print(f"{Command.QUIT1.value} and {Command.QUIT2.value} "
+                          "take nor parameters.")
 
                 case [(Command.HELP1.value | Command.HELP2.value)]:
                     print_help()
