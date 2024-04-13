@@ -748,7 +748,10 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
     return result
 
 
-@click.command(context_settings=CLICK_CONTEXT_SETTINGS)
+@click.command(
+    name=NAME,
+    context_settings=CLICK_CONTEXT_SETTINGS
+)
 @click.option(
     "-H",
     "--history",
@@ -767,6 +770,7 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
     type=click.Path(dir_okay=False),
     help="The location of the optional configuration file."
 )
+@click.version_option(VERSION)
 @click.argument("db_spec", required=True, type=str)
 def main(db_spec: str, history: str, config: str) -> None:
     """
