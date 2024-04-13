@@ -50,6 +50,8 @@ do
         clean)
             run "rm -rf *.egg-info" || exit 1
             run "rm -rf dist" || exit 1
+            run "rm -rf __pycache__" || exit 1
+            run "rm -rf sqlshell/__pycache__" || exit 1
             ;;
 
         build)
