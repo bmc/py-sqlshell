@@ -94,6 +94,12 @@ complete explanation.
 
 There is _no_ support for SQL completion.
 
+**Note:** On some Linux distributions, it can be difficult to get Python's
+GNU readline package to honor tab-completion, even though it works fine in
+(say) `bash`. But hitting the ESC key twice does generally work, though it's
+less convenient. This may be an artifact of how the Python distribution is
+compiled.
+
 ## Configuration
 
 `sqlshell` supports an optional configuration file, located in
