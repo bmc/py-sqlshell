@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast, Dict, Optional, Union
+from typing import Any, Dict, cast
 
 import click
 import sqlalchemy
@@ -71,7 +71,7 @@ class ConnectionConfig:
     A single connection configuration from the configuration file.
     """
     url: str
-    history_file: Optional[Path]
+    history_file: Path | None
 
 
 class ConfigurationError(Exception):
@@ -227,7 +227,7 @@ def display_results(
     limit: int,
     total: int,
     no_results_message: str | None = None,
-    elapsed: Union[float, None] = None,
+    elapsed: float | None = None,
 ) -> None:
     """
     Display the results of a select.
