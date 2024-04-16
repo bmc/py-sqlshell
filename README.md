@@ -91,6 +91,21 @@ Once you get into `sqlshell`, type `?` or `.help` at the prompt to see a list
 of the internal commands. Anything else you type is assumed to be SQL and passed
 along to the database.
 
+The currently supported commands are as follows. `.help` from within `sqlshell`
+provides more information on each one.
+
+* `.exit`, `.quit`, Ctrl-D: Quit `sqlshell`
+* `.export`: Export a table to a CSV file
+* `.help` or `?`: Show help
+* `.history`: Show the command history
+* `.indexes`: Show the indexes for a table
+* `.limit`: Set or clear the maximum number of rows shown from a query
+* `.schema`: Show the schema for a table
+* `.tables`: Show the names of the tables in the current database
+* `.url`: Show the SQLAlchemy URL for the current database
+
+Anything else you type is assumed to be SQL.
+
 #### Command Completion
 
 `sqlshell` has some rudimentary support for command completion of its
