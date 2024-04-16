@@ -45,6 +45,10 @@ $ pip install dist/sqlshell-0.1.6-py3-none-any.whl
 This will install the package, as well as its dependencies, and it will
 create a `sqlshell` command in your Python's `bin` directory.
 
+**Recommendation:** Don't install `sqlshell` in your main Python installation.
+Use a [Python virtual environment](https://docs.python.org/3/library/venv.html),
+instead.
+
 `sqlshell` uses the newer
 [Python package standard](https://packaging.python.org/en/latest/overview/)
 for building and packaging. See `pyproject.toml` in this repo for package
