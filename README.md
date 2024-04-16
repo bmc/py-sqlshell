@@ -13,13 +13,15 @@ environment.
 
 ## Motivation
 
-Database command line tools are common. PostgreSQL has `psql`. MySQL has
-`mysql`. SQLite3 has `sqlite`. But they're all different. They have different
-commands, different capabilities, and different ways of showing query output.
-(And the `sqlite` output format is just awful.)
+Database command shells are common. PostgreSQL has `psql`. MySQL has
+`mysql`. SQLite3 has `sqlite`. Oracle has `sqlplus`.
+
+But they're all different. They have different commands, different capabilities,
+and different ways of showing query output. (And the `sqlite` output format is
+just awful.)
 
 `sqlshell` is not as feature-rich as the database-specific command shells,
-but it works the same and looks the same, no matter what database it's
+but it works the same way and looks the same, no matter what database it's
 querying. (And querying a SQLite database with `sqlshell` produces output
 that's actually readable.)
 
