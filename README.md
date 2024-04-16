@@ -92,9 +92,9 @@ along to the database.
 #### Command Completion
 
 `sqlshell` has some rudimentary support for command completion of its
-`.` commands. In addition, the `.schema` command, which takes a single table
-name parameter, supports table name completion. Again, type `.help` for a
-complete explanation.
+`.` commands. In addition, the `.schema` and `.indexes` commands, which take
+a single table name parameter, support table name completion. Again, type
+`.help` for a complete explanation.
 
 There is _no_ support for SQL completion.
 
