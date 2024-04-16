@@ -1,5 +1,16 @@
+# Project configuration for sqlshell.
+#
+# The build process uses the Python "build" tool as the build front-end and
+# setuptools as the build back-end. See comments in [build-system], below.
+
+# -----------------------------------------------------------------------------
+# Project configuration
+# -----------------------------------------------------------------------------
+
 [project]
 name = "sqlshell"
+# Version is resolved from the sqlshell.VERSION constant. README is also
+# dynamically discovered. See [tools.setuptools.dynamic], below.
 dynamic = ["version", "readme"]
 dependencies = [
   "click>=8.1.7",
@@ -36,6 +47,10 @@ Homepage = "https://github.com/bmc/py-sqlshell"
 [project.scripts]
 sqlshell = "sqlshell:main"
 
+# -----------------------------------------------------------------------------
+# Build configuration
+# -----------------------------------------------------------------------------
+
 [build-system]
 # Use https://github.com/pypa/build
 # (python -m build)
@@ -45,11 +60,17 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
+# Ignore the "docker" subdirectory. It's not a Python package, but
+# setuptools will bundle it in the wheel if it's not explicitly excluded.
 exclude = ["docker*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "sqlshell.VERSION"}
 readme = {file = ["README.md"]}
+
+# -----------------------------------------------------------------------------
+# Tool-specific configurations
+# -----------------------------------------------------------------------------
 
 [tool.black]
 line-length = 79
@@ -62,10 +83,13 @@ extend-exclude = '''
 profile = "black"
 src_paths = ["*.py"]
 
-[tool.pytest.ini_options]
-pythonpath = ["."]
+# No test package yet. (This is a command utility that relies on user-input.)
+# Testing it automatically is challenging.
+#[tool.pytest.ini_options]
+#pythonpath = ["."]
 
 [tool.pyright]
+# pyright is a type checker.
 venvPath = "venv"
 include = ["./*.py"]
 exclude = ["./tasks.py", "bin"]
