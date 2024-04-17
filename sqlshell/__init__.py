@@ -188,18 +188,22 @@ def init_bindings_and_completion(engine: Engine) -> None:
         match tokens:
             case []:
                 options = commands
-            case [s, *_] if s in (
+            case [s, *rest] if s in (
                 Command.SCHEMA.value,
                 Command.INDEXES.value,
                 Command.FKEYS.value
             ):
-                # Special case: Options in this case are the tables in the
-                # database.
-                options = [
-                    t.name
-                    for t in get_tables(engine)
-                    if t.name.lower().startswith(text.lower())
-                ]
+                if full_line.endswith(" "):
+                    # Already fully completed.
+                    options = []
+                else:
+                    # Special case: Options in this case are the tables in the
+                    # database.
+                    options = [
+                        t.name
+                        for t in get_tables(engine)
+                        if t.name.lower().startswith(text.lower())
+                    ]
             case [s, *_] if s in commands:
                 # An already completed command. There's nothing to complete.
                 options = []
