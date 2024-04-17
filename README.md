@@ -63,7 +63,7 @@ and build settings.
 Run `sqlshell -h` to see usage output.
 
 You'll pass `sqlshell` a SQLAlchemy-compatible database URL or the name of a
-section in the [configuration file][#configuration]. With databases
+section in the [configuration file][#configuration-file]. With databases
 other than SQLite3, you'll need to install supporting packages in order to
 connect to the database. See [Examples](#examples), below.
 
@@ -117,7 +117,59 @@ GNU readline package to honor tab-completion, even though it works fine in
 less convenient. This may be an artifact of how the Python distribution is
 compiled.
 
-## Configuration
+## Examples
+
+### PostgreSQL
+
+Suppose I have a PostgreSQL server running on my local machine, and it
+contains a database called "test" accessible by user "scott" using the
+(awful) password "tiger". I've decided to use the `pg8000` Python package
+to access PostgreSQL from Python. So, the first step is:
+
+```shell
+$ pip install pg8000
+```
+
+Once that package is installed in my Python environment, I can use `sqlshell`
+to connect to my database:
+
+```shell
+$ sqlshell postgresql+pg8000://scott:tiger@localhost/test
+```
+
+### MySQL
+
+Suppose, instead, my "test" database is in a MySQL server running on my
+local machine, with the same user ("scott") and terrible password ("tiger").
+I've decided to use the `mysql-connector-python` package to access MySQL
+from Python. The first step is to install that package:
+
+```shell
+$ pip install mysql-connector-python
+```
+
+Now, I can access my database using `sqlshell`:
+
+```shell
+$ sqlshell mysql+mysqlconnector://scott:tiger@localhost/test
+```
+
+### SQLite3
+
+In this case, my test database is in file "test.db" in my home directory.
+Since Python's standard library has built-in support for SQLite3, I don't
+have to install anything first.
+
+```shell
+$ cd ~
+$ sqlshell sqlite:///test.db
+```
+
+If you get tired of typing the same URL all the time, you can record
+commonly-used connection information in the optional
+[configuration file](#configuration-file) file.
+
+## Configuration File
 
 `sqlshell` supports an optional configuration file, located in
 `.sqlshell.cfg` by default. You can override the location of the configuration
@@ -167,54 +219,6 @@ history = "${HOME}/.sqlshell-history"
 ```
 
 See `sample.cfg` in this repository for an example.
-
-## Examples
-
-### PostgreSQL
-
-Suppose I have a PostgreSQL server running on my local machine, and it
-contains a database called "test" accessible by user "scott" using the
-(awful) password "tiger". I've decided to use the `pg8000` Python package
-to access PostgreSQL from Python. So, the first step is:
-
-```shell
-$ pip install pg8000
-```
-
-Once that package is installed in my Python environment, I can use `sqlshell`
-to connect to my database:
-
-```shell
-$ sqlshell postgresql+pg8000://scott:tiger@localhost/test
-```
-
-### MySQL
-
-Suppose, instead, my "test" database is in a MySQL server running on my
-local machine, with the same user ("scott") and terrible password ("tiger").
-I've decided to use the `mysql-connector-python` package to access MySQL
-from Python. The first step is to install that package:
-
-```shell
-$ pip install mysql-connector-python
-```
-
-Now, I can access my database using `sqlshell`:
-
-```shell
-$ sqlshell mysql+mysqlconnector://scott:tiger@localhost/test
-```
-
-### SQLite3
-
-In this case, my test database is in file "test.db" in my home directory.
-Since Python's standard library has built-in support for SQLite3, I don't
-have to install anything first.
-
-```shell
-$ cd ~
-$ sqlshell sqlite:///test.db
-```
 
 ## Maintenance Warnings
 
