@@ -92,6 +92,7 @@ provides more information on each one.
 
 * `.exit`, `.quit`, Ctrl-D: Quit `sqlshell`
 * `.export`: Export a table to a CSV file
+* `.fk`: Show foreign key constraints
 * `.help` or `?`: Show help
 * `.history`: Show the command history
 * `.indexes`: Show the indexes for a table
@@ -105,8 +106,8 @@ Anything else you type is assumed to be SQL.
 #### Command Completion
 
 `sqlshell` has some rudimentary support for command completion of its
-`.` commands. In addition, the `.schema` and `.indexes` commands, which take
-a single table name parameter, support table name completion. Again, type
+`.` commands. In addition, the `.schema`, `.indexes`, and `.fk` commands, which
+take a single table name parameter, support table name completion. Again, type
 `.help` for a complete explanation.
 
 There is _no_ support for SQL completion.

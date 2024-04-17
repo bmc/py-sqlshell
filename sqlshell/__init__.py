@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
@@ -53,6 +53,7 @@ class Command(StrEnum):
     """
 
     EXPORT = ".export"
+    FKEYS = ".fk"
     HELP1 = ".help"
     HELP2 = "?"
     HISTORY = ".history"
@@ -92,6 +93,12 @@ HELP = (
         "the table will be dumped in JSON Lines format, with each row as a "
         "JSON object in the file. You can use ~ in your paths as a shorthand "
         'for your home directory (e.g., "~/table.json")',
+    ),
+    (
+        f"{Command.FKEYS.value} <table_name>",
+        "Display the list of foreign keys for a table. Note: <table_name> is "
+        "the table with the foreign key constraints, not the table the "
+        "foreign key(s) reference."
     ),
     (f"{Command.HELP1.value} or {Command.HELP2.value}", "Show this help."),
     (
@@ -181,7 +188,11 @@ def init_bindings_and_completion(engine: Engine) -> None:
         match tokens:
             case []:
                 options = commands
-            case [s, *_] if s in (Command.SCHEMA.value, Command.INDEXES.value):
+            case [s, *_] if s in (
+                Command.SCHEMA.value,
+                Command.INDEXES.value,
+                Command.FKEYS.value
+            ):
                 # Special case: Options in this case are the tables in the
                 # database.
                 options = [
@@ -423,7 +434,7 @@ def show_schema(table_name: str, engine: Engine) -> None:
         """
         from sqlalchemy.schema import CreateTable
 
-        schema_str = str(CreateTable(table).compile(engine)).strip()
+        schema_str = str(CreateTable(t).compile(engine)).strip()
         # Replace any hard tabs with 2 spaces.
         schema_str = schema_str.replace("\t", "  ")
         print(f"\n{schema_str}\n")
@@ -563,6 +574,105 @@ def show_indexes(table_name: str, engine: Engine) -> None:
             sql = f"show index from {table_name}"
         case EngineName.POSTGRES:
             sql = f"select * from pg_indexes where tablename = '{table_name}'"
+        case _:
+            pass
+
+    if sql is None:
+        show_generic_indexes()
+    else:
+        run_sql(
+            sql=sql,
+            engine=engine,
+            echo_statement=True,
+            no_results_message=NO_RESULTS_MESSAGE
+        )
+
+
+def show_foreign_keys(table_name: str, engine: Engine) -> None:
+    NO_RESULTS_MESSAGE = "No foreign keys."
+
+    def show_generic_indexes() -> None:
+        inspector = sqlalchemy.inspect(engine)
+        indexes = inspector.get_foreign_keys(table_name)
+        adjusted_data: list[dict[str, str]] = []
+        for idx in indexes:
+            adj_dict: dict[str, str] = dict()
+            adj_dict["name"] = idx.get("name") or "?"
+            adj_dict["columns"] = ", ".join(
+                idx.get("constrained_columns") or []
+            )
+            adj_dict["references"] = idx.get("referred_table") or "?"
+            adj_dict["references_columns"] = ", ".join(
+                idx.get("referred_columns") or []
+            )
+            adjusted_data.append(adj_dict)
+
+        display_results(
+            columns=["name", "columns", "references", "references_columns"],
+            data=adjusted_data,
+            limit=0,
+            total=len(adjusted_data),
+            no_results_message=NO_RESULTS_MESSAGE
+        )
+
+    # Validate that the table exists first, using SQLAlchemy. This strategy
+    # ensures a consistent "not found" message across database types. It's
+    # especially helpful with SQLite, where issuing the "pragma" statement
+    # for a non-existent table just returns nothing, not even an error message
+    # (even in the sqlite3 shell).
+    tables = get_tables(engine)
+    match [t for t in tables if t.name.lower() == table_name.lower()]:
+        case []:
+            print(f'Table "{table_name}" does not exist.')
+            return
+        case [_]:
+            pass
+        case many:
+            raise Exception(f'Too many matches for "{table_name}": {many}')
+
+    # If there's a SQL statement that will generate a nice tabular result,
+    # use that. Otherwise, just pull the "CREATE TABLE" statement out of
+    # SQLAlchemy, and display that.
+    #
+    # TODO: Extend for other database types.
+    sql = None
+    match engine.name:
+        case EngineName.SQLITE:
+            sql = f"pragma foreign_key_list([{table_name}])"
+        case EngineName.MYSQL:
+            sql = (
+                # Note: Must escape (with double quotes) "table", "column",
+                # and "references", as they are reserved words.
+                "select constraint_name as name, "
+                'constraint_schema as "database", '
+                'table_name as "table", '
+                'column_name as "column", '
+                'table_schema as referenced_database, '
+                'referenced_table_name as references_table, '
+                "referenced_column_name as references_column "
+                "from information_schema.key_column_usage "
+                "where referenced_table_schema = (select database()) and "
+                f"table_name = '{table_name}'"
+            )
+        case EngineName.POSTGRES:
+            sql = (
+                "select tc.constraint_name as name, "
+                "tc.table_schema as database, "
+                "tc.table_name as table, "
+                "kcu.column_name as column, "
+                "ccu.table_schema as referenced_database, "
+                "ccu.table_name as references_table, "
+                "ccu.column_name as references_column "
+                "from information_schema.table_constraints as "
+                "tc join information_schema.key_column_usage "
+                "as kcu on tc.constraint_name = kcu.constraint_name and "
+                "tc.table_schema = kcu.table_schema join "
+                "information_schema.constraint_column_usage as "
+                "ccu on ccu.constraint_name = tc.constraint_name and "
+                "ccu.table_schema = tc.table_schema "
+                "where tc.constraint_type = 'FOREIGN KEY' and "
+                f"tc.table_name='{table_name}'"
+            )
         case _:
             pass
 
@@ -733,6 +843,12 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                 case [(Command.HELP1.value | Command.HELP2.value), *_]:
                     print(f"{Command.HELP1.value} and {Command.HELP2.value} "
                           "take no parameters.")
+
+                case [Command.FKEYS.value, table_name]:
+                    show_foreign_keys(table_name, engine)
+
+                case [Command.FKEYS.value, *_]:
+                    print(f"Usage: {Command.FKEYS.value} <table_name>")
 
                 case [Command.INDEXES.value, table_name]:
                     show_indexes(table_name, engine)
