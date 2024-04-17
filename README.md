@@ -87,10 +87,6 @@ those RDBMS systems.
 With the exception of `?`, which is an alias for `.help`, all of the non-SQL
 commands `sqlshell` supports start with `.`.
 
-Once you get into `sqlshell`, type `?` or `.help` at the prompt to see a list
-of the internal commands. Anything else you type is assumed to be SQL and passed
-along to the database.
-
 The currently supported commands are as follows. `.help` from within `sqlshell`
 provides more information on each one.
 
