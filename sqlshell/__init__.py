@@ -150,6 +150,10 @@ def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
     """
     Get the list of Table objects in the database. The list is returned sorted
     by table name, case-blind.
+
+    :param engine: The SQLAlchemy engine for the database
+
+    :returns: A (possibly empty) list of SQLAlchemy Table objects
     """
     metadata = sqlalchemy.MetaData()
     metadata.reflect(bind=engine)
@@ -159,6 +163,8 @@ def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
 def init_history(history_path: Path) -> None:
     """
     Load the local readline history file.
+
+    :param history_path: Path of the history file. It doesn't have to exist.
     """
     with suppress(FileNotFoundError):
         print(f'Loading history from "{history_path}".')
@@ -172,6 +178,8 @@ def init_history(history_path: Path) -> None:
 def init_bindings_and_completion(engine: Engine) -> None:
     """
     Initialize readline bindings.
+
+    :param engine: The SQLAlchemy engine for the database, for table completion
     """
 
     def command_completer(text: str, state: int) -> str | None:
@@ -249,17 +257,16 @@ def display_results(
 
     Parameters:
 
-    columns            - the names of the columns, in order
-    data               - list of rows. Each row is a dictionary of
-                         (column -> value)
-    limit              - the current row limit (for display), or 0
-    total              - the total number of rows. If limit is 0, total must
-                         match the length of data. Otherwise, total is the
-                         number of rows that would have been displayed, if
-                         limit were 0.
-    no_results_message - the message to display if the results are empty.
-    elapsed            - the elapsed time to run the query that produced the
-                         results, or None not to display an elapsed time
+    :param columns: the names of the columns, in order
+    :param data: list of rows. Each row is a dictionary of (column -> value)
+    :param limit: the current row limit (for display), or 0
+    :param total: the total number of rows. If limit is 0, total must match
+        the length of data. Otherwise, total is the number of rows that would
+        have been displayed, if limit were 0.
+    :param no_results_message: the message to display if the results are empty,
+        or None for the default message
+    :param elapsed: the elapsed time to run the query that produced the results,
+        or None not to display an elapsed time
     """
     if len(data) == 0:
         print(no_results_message or "No data.")
@@ -342,6 +349,14 @@ def run_sql(
 ) -> None:
     """
     Run a SQL statement.
+
+    :param sql: The SQL statement to run
+    :param engine: The SQLAlchemy engine for the database
+    :param limit: The current row limit setting, or 0 for no limit
+    :param echo_statement: Whether or not to echo the statement before
+        running it
+    :param no_results_message: The message to display if there are no results,
+        or None for the default
     """
     from time import perf_counter
 
@@ -430,6 +445,9 @@ def print_help() -> None:
 def show_schema(table_name: str, engine: Engine) -> None:
     """
     Print the schema for a table.
+
+    :param table_name: The table to describe
+    :param engine: The SQLAlchemy engine for the database
     """
 
     def show_create_table_ddl(t: sqlalchemy.Table) -> None:
@@ -487,6 +505,8 @@ def show_schema(table_name: str, engine: Engine) -> None:
 def show_tables(engine: Engine) -> None:
     """
     Show all tables in the open database.
+
+    :param engine: The SQLAlchemy engine for the database
     """
     for t in get_tables(engine):
         print(t.name)
@@ -497,6 +517,9 @@ def show_tables_matching(line: str, engine: Engine) -> None:
     Show all table names matching a specified regular expression. This
     function takes the entire input line, including the ".tables" command.
     It re-splits it using shlex, which allows quoting of the regular expression.
+
+    :param line: The entire input line
+    :param engine: The SQLAlchemy engine for the database
     """
 
     try:
@@ -522,6 +545,9 @@ def show_indexes(table_name: str, engine: Engine) -> None:
     """
     Given a table name, display the indexes (if any), associated with the
     table.
+
+    :param table_name: The name of the table for which indexes are to be shown
+    :param engine: The SQLAlchemy engine for the database
     """
     NO_RESULTS_MESSAGE = "No indexes."
 
@@ -596,6 +622,10 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
     """
     Show the foreign keys defined on a table, if any. Uses database-specific
     SQL, if known; otherwise, uses SQLAlchemy generic methods.
+
+    :param table_name: The name of the table for which foreign keys are to be
+        shown
+    :param engine: The SQLAlchemy engine for the database
     """
     NO_RESULTS_MESSAGE = "No foreign keys."
 
@@ -698,13 +728,18 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
 def format_history_item(line: str, index: int) -> str:
     """
     Format a single history line.
+
+    :param line: The history line
+    :param index: The index (number) of the history line
     """
     return f"{index:5d}. {line}"
 
 
 def show_history(total: int = 0) -> None:
     """
-    Display the history. If n is > 0, display only the last n history items.
+    Display the history.
+
+    :param total: How many history lines to show, or 0 for all of them.
     """
     history_length = readline.get_current_history_length()
     # History indexes are 1-based, not 0-based.
@@ -727,6 +762,8 @@ def show_history_matching(line: str) -> None:
     Show all history items matching a specified regular expression. This
     function takes the entire input line, including the ".history" command.
     It re-splits it using shlex, which allows quoting of the regular expression.
+
+    :param line: the input line containing the regular expression
     """
 
     try:
@@ -755,6 +792,10 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
     Export a table to a text file. If the file ("where") ends in ".csv",
     the table is exported to a CSV file. If the file ends in ".json",
     the table is exported in JSON Lines format.
+
+    :param table_name: the name of the table to export
+    :param where: the path of the CSV file to overwrite
+    :param engine: the SQLAlchemy engine of the database
     """
     from sqlalchemy.engine.result import MappingResult
 
@@ -815,6 +856,10 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
 def run_command_loop(db_url: str, history_path: Path) -> None:
     """
     Read and process commands.
+
+    :param db_url: the SQLAlchemy URL of the database to which to connect
+    :param history_path: the path to the history file to use, which does not
+        have to exist
     """
     print(f"{NAME}, version {VERSION}\n")
 
@@ -938,6 +983,9 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
     values are ConnectionConfig objects. The dictionary will be empty,
     if there is no configuration file or if the configuration file is
     empty. Raises ConfigurationError on error.
+
+    :param config: Path to the configuration file, which does not have to
+        exist
     """
     import tomllib
     from string import Template
