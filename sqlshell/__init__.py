@@ -593,6 +593,10 @@ def show_indexes(table_name: str, engine: Engine) -> None:
 
 
 def show_foreign_keys(table_name: str, engine: Engine) -> None:
+    """
+    Show the foreign keys defined on a table, if any. Uses database-specific
+    SQL, if known; otherwise, uses SQLAlchemy generic methods.
+    """
     NO_RESULTS_MESSAGE = "No foreign keys."
 
     def show_generic_indexes() -> None:
@@ -692,6 +696,9 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
 
 
 def format_history_item(line: str, index: int) -> str:
+    """
+    Format a single history line.
+    """
     return f"{index:5d}. {line}"
 
 
