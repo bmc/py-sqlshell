@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTLEN = 10000
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
@@ -182,6 +182,16 @@ def init_bindings_and_completion(engine: Engine) -> None:
     :param engine: The SQLAlchemy engine for the database, for table completion
     """
 
+    def complete_tables(text: str, full_line: str) -> list[str]:
+        if full_line.endswith(" "):
+            # Already fully completed
+            options = []
+        else:
+            options = [t.name for t in get_tables(engine)
+                       if t.name.lower().startswith(text.lower())]
+
+        return options
+
     def command_completer(text: str, state: int) -> str | None:
         """
         This is a readline completer that will complete any command other
@@ -196,22 +206,12 @@ def init_bindings_and_completion(engine: Engine) -> None:
         match tokens:
             case []:
                 options = commands
-            case [s, *rest] if s in (
+            case [s, *_] if s in (
                 Command.SCHEMA.value,
                 Command.INDEXES.value,
                 Command.FKEYS.value
             ):
-                if full_line.endswith(" "):
-                    # Already fully completed.
-                    options = []
-                else:
-                    # Special case: Options in this case are the tables in the
-                    # database.
-                    options = [
-                        t.name
-                        for t in get_tables(engine)
-                        if t.name.lower().startswith(text.lower())
-                    ]
+                options = complete_tables(text, full_line)
             case [s, *_] if s in commands:
                 # An already completed command. There's nothing to complete.
                 options = []
