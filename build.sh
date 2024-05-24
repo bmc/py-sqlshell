@@ -8,7 +8,9 @@
 
 usage() {
   echo "Usage: $0 target ..." >&2
+  echo "       $0 -h" >&2
   echo "Valid targets: build, clean, docker >&2" >&2
+  echo "Default: clean build"
   exit 1
 }
 
@@ -25,17 +27,25 @@ run() {
 
 case $# in
   0)
-    usage
+    targets="clean build"
+    ;;
+  1)
+    if [ "$1" = "-h" ]
+    then  
+      usage
+    fi
+    targets="$1"
+    ;;
+  *)
+    targets="%*"
     ;;
 esac
 
 # Validate targets
-targets=""
-for t in $*
+for t in $targets
 do
   case $t in
     build|clean|docker)
-      targets="$targets $t"
       ;;
     *)
       usage
