@@ -33,7 +33,11 @@ from sqlalchemy.orm import Session
 NAME = "sqlshell"
 VERSION = "0.1.9"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
-HISTLEN = 10000
+HISTORY_LENGTH = 10000
+# Note that Python's readline library can be based on GNU Readline
+# or the BSD Editline library, and it's not selectable. It's whatever
+# has been compiled in. They use different initialization files, so we'll
+# load whichever one is appropriate.
 EDITLINE_BINDINGS_FILE = Path("~/.editrc").expanduser()
 READLINE_BINDINGS_FILE = Path("~/.inputrc").expanduser()
 DEFAULT_SCREEN_WIDTH = 79
@@ -42,6 +46,10 @@ DEFAULT_CONFIG_FILE = Path("~/.sqlshell.cfg").expanduser()
 
 
 class EngineName(StrEnum):
+    """
+    Explicitly supported SQLAlchemy engines. Other engines will work, but
+    there's explicit, database-specific logic that's implemented for these.
+    """
     POSTGRES = "postgresql"
     MYSQL = "mysql"
     SQLITE = "sqlite"
@@ -51,7 +59,6 @@ class Command(StrEnum):
     """
     Non-SQL commands the shell supports.
     """
-
     EXPORT = ".export"
     FKEYS = ".fk"
     HELP1 = ".help"
@@ -76,10 +83,13 @@ class ConnectionConfig:
 
 
 class ConfigurationError(Exception):
+    """
+    Thrown to indicate a configuration error.
+    """
     pass
 
 
-# This is a series of (command, explanation) tuples. show_help() will wrap
+# This is a series of (command(s), explanation) tuples. show_help() will wrap
 # the explanations.
 HELP = (
     (
@@ -171,7 +181,7 @@ def init_history(history_path: Path) -> None:
         readline.read_history_file(str(history_path))
         # default history len is -1 (infinite), which may grow unruly
 
-    readline.set_history_length(HISTLEN)
+    readline.set_history_length(HISTORY_LENGTH)
     atexit.register(readline.write_history_file, str(history_path))
 
 
