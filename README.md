@@ -211,7 +211,8 @@ You can also use the shortest string that unique matches the prefix of a
 configuration section. So, given the above configuration, you can use
 `sqlshell postgres-p` as a shorthand for `sqlshell postgres-prod`, and
 you can even use `sqlshell m` to match the `mysql-test` instance. If your
-prefix matches multiple entries, `sqlshell` will tell you.
+prefix matches multiple entries, `sqlshell` will tell you. (The match is done
+case-blind.)
 
 The configuration file is in [TOML](https://toml.io/en) format. You can
 have as many sections as you want. In each section:
@@ -251,6 +252,6 @@ unwilling to spend time getting this to work on Windows.
 
 ## License
 
-This software is released under the
+`sqlshell` is copyright © 2024 Brian M. Clapper and is released under the
 [Apache Software License](https://apache.org/licenses/LICENSE-2.0), version
 2.0. A text copy of the license is available in this repository.
