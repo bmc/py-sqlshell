@@ -190,6 +190,14 @@ Here's an example:
 [postgres-test]
 url = "postgresql+pg8000://user:password@localhost/test"
 history = "~/.sqlshell-pg-test-history"
+
+[postgres-prod]
+url = "postgresql+pg8000://user:password@localhost/production"
+history = "~/.sqlshell-pg-prod-history"
+
+[mysql-test]
+url = "mysql+mysqlconnector://scott:tiger@localhost/test"
+history = "~/.sqlshell-mysql-test-history"
 ```
 
 With that configuration in place, you can simply invoke `sqlshell` as follows,
@@ -198,6 +206,12 @@ to connect to your test PostgreSQL database:
 ```shell
 $ sqlshell postgres-test
 ```
+
+You can also use the shortest string that unique matches the prefix of a
+configuration section. So, given the above configuration, you can use
+`sqlshell postgres-p` as a shorthand for `sqlshell postgres-prod`, and
+you can even use `sqlshell m` to match the `mysql-test` instance. If your
+prefix matches multiple entries, `sqlshell` will tell you.
 
 The configuration file is in [TOML](https://toml.io/en) format. You can
 have as many sections as you want. In each section:

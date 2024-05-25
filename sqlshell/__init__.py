@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Dict, cast
+from typing import Any, Dict, cast, Self
 
 import click
 import sqlalchemy
@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.9"
+VERSION = "0.1.10"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -78,13 +78,44 @@ class ConnectionConfig:
     """
     A single connection configuration from the configuration file.
     """
+    name: str
     url: str
     history_file: Path | None
+
+
+class Configuration:
+    """
+    Represents the parsed configuration data.
+    """
+    def __init__(self, configs: list[ConnectionConfig]):
+        self._configs = configs
+
+    def lookup(self: Self, spec: str) -> list[ConnectionConfig] | None:
+        """
+        Uses a string to look up a configuration. Returns a list of matching
+        configurations, or None if no match.
+        """
+        matches = [
+            c for c in self._configs
+            if c.name.lower().startswith(spec.lower())
+        ]
+
+        if len(matches) == 0:
+            return None
+
+        return matches
 
 
 class ConfigurationError(Exception):
     """
     Thrown to indicate a configuration error.
+    """
+    pass
+
+
+class AbortError(Exception):
+    """
+    Thrown to force an abort with a non-zero exit code.
     """
     pass
 
@@ -154,6 +185,20 @@ HELP_EPILOG = (
         "Completion for SQL statements is not available."
     ),
 )
+
+
+match os.environ.get("COLUMNS", str(DEFAULT_SCREEN_WIDTH)):
+    case None:
+        SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
+    case s:
+        try:
+            SCREEN_WIDTH = int(s)
+        except ValueError:
+            SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
+            print(
+                "The COLUMNS environment variable has an invalid value of "
+                f'"{s}". Using screen width of {DEFAULT_SCREEN_WIDTH}.'
+            )
 
 
 def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
@@ -422,18 +467,9 @@ def print_help() -> None:
         prefix_width = max(prefix_width, len(prefix))
 
     # How much room do we have left for text? Allow for separating " - ".
-    screen_width = DEFAULT_SCREEN_WIDTH
-    s_width = os.environ.get("COLUMNS", str(DEFAULT_SCREEN_WIDTH))
-    try:
-        screen_width = int(s_width)
-    except ValueError as e:
-        print(
-            "The COLUMNS environment variable has an invalid value of "
-            f'"{s_width}". Using screen width of {DEFAULT_SCREEN_WIDTH}.'
-        )
 
     separator = " - "
-    text_width = screen_width - len(separator) - prefix_width
+    text_width = SCREEN_WIDTH - len(separator) - prefix_width
     if text_width < 0:
         # Screw it. Just pick some value.
         text_width = DEFAULT_SCREEN_WIDTH // 2
@@ -448,7 +484,7 @@ def print_help() -> None:
 
     print("")
     for line in HELP_EPILOG:
-        wrapped = textwrap.fill(line, width=screen_width)
+        wrapped = textwrap.fill(line, width=SCREEN_WIDTH)
         print(wrapped)
 
 
@@ -986,7 +1022,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
             break
 
 
-def load_config(config: Path) -> Dict[str, ConnectionConfig]:
+def load_config(config: Path) -> Configuration | None:
     """
     Reads the configuration file, if it exists. Returns a dictionary
     where the keys are names (sections) from the configuration and the
@@ -1000,8 +1036,7 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
     import tomllib
     from string import Template
 
-    if not config.exists():
-        return {}
+    assert config.exists()
 
     try:
         with open(config, mode='rb') as f:
@@ -1023,7 +1058,7 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
 
     env = EnvDict(**os.environ)
 
-    result: dict[str, ConnectionConfig] = {}
+    configs: list[ConnectionConfig] = []
     for key, values in data.items():
         url = values.get("url")
         if url is None:
@@ -1039,9 +1074,13 @@ def load_config(config: Path) -> Dict[str, ConnectionConfig]:
             t = Template(history)
             history = Path(t.substitute(env)).expanduser()
 
-        result[key] = ConnectionConfig(url=url, history_file=history)
+        configs.append(ConnectionConfig(
+            name=key,
+            url=url,
+            history_file=history
+        ))
 
-    return result
+    return Configuration(configs)
 
 
 @click.command(
@@ -1105,17 +1144,49 @@ def main(db_spec: str, history: str, config: str) -> None:
     editline, it will read those values from ".editrc" in your home directory.
     The shell will display the path of the file it is loading.
     """
-    configuration = load_config(Path(config))
 
-    if (conn_cfg := configuration.get(db_spec)) is not None:
-        url = conn_cfg.url
-        history_file = conn_cfg.history_file or history
-    else:
+    try:
+        configuration: Configuration | None = None
+        p_config = Path(config)
+        if not p_config.exists():
+            print(f'WARNING: Configuration file "{config}" does not exist.')
+        elif not p_config.is_file():
+            raise AbortError(f'Configuration file "{config}" is not a file.')
+        else:
+            configuration = load_config(Path(config))
+
         url = db_spec
-        history_file = history
+        history_file: Path = Path(history)
 
-    run_command_loop(url, Path(history_file))
+        if configuration is not None:
+            match configuration.lookup(db_spec):
+                case None:
+                    # Use the db_spec as the URL, with the default history.
+                    pass
 
+                case [cfg]:
+                    url = cfg.url
+                    if cfg.history_file is not None:
+                        history_file = cfg.history_file
+
+                case []:
+                    # Should not happen.
+                    assert False
+
+                case configs:
+                    match_str = ", ".join([c.name for c in configs])
+                    raise AbortError(textwrap.fill(
+                        f'"{db_spec}" matches more than one section in '
+                        f'"{config}": {match_str}',
+                        width=SCREEN_WIDTH
+                    ))
+
+
+        run_command_loop(url, Path(history_file))
+
+    except (AbortError, ConfigurationError) as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
