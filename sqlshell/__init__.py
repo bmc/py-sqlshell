@@ -31,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 NAME = "sqlshell"
-VERSION = "0.1.10"
+VERSION = "0.1.11"
 CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -740,22 +740,21 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
             )
         case EngineName.POSTGRES:
             sql = (
-                "select tc.constraint_name as name, "
-                "tc.table_schema as database, "
-                "tc.table_name as table, "
-                "kcu.column_name as column, "
-                "ccu.table_schema as referenced_database, "
-                "ccu.table_name as references_table, "
-                "ccu.column_name as references_column "
-                "from information_schema.table_constraints as "
-                "tc join information_schema.key_column_usage "
-                "as kcu on tc.constraint_name = kcu.constraint_name and "
-                "tc.table_schema = kcu.table_schema join "
-                "information_schema.constraint_column_usage as "
-                "ccu on ccu.constraint_name = tc.constraint_name and "
-                "ccu.table_schema = tc.table_schema "
-                "where tc.constraint_type = 'FOREIGN KEY' and "
-                f"tc.table_name='{table_name}'"
+                "SELECT conname AS constraint_name, "
+                "conrelid::regclass AS table_name, "
+                "a.attname AS column_name,"
+                "confrelid::regclass AS foreign_table_name, "
+                "af.attname AS foreign_column_name "
+                "FROM pg_constraint AS c "
+                "JOIN pg_attribute AS a ON a.attnum = ANY(c.conkey) "
+                "AND a.attrelid = c.conrelid "
+                "JOIN pg_class AS cl ON cl.oid = c.conrelid "
+                "JOIN pg_namespace AS nsp ON nsp.oid = cl.relnamespace "
+                "JOIN pg_attribute AS af ON af.attnum = ANY(c.confkey) "
+                "AND af.attrelid = c.confrelid "
+                "WHERE c.contype = 'f' "
+                f"AND cl.relname = '{table_name}' "
+                "AND nsp.nspname = 'public'"
             )
         case _:
             pass
