@@ -37,7 +37,7 @@ case $# in
     targets="$1"
     ;;
   *)
-    targets="%*"
+    targets="$*"
     ;;
 esac
 
