@@ -63,7 +63,7 @@ and build settings.
 Run `sqlshell -h` to see usage output.
 
 You'll pass `sqlshell` a SQLAlchemy-compatible database URL or the name of a
-section in the [configuration file][#configuration-file]. With databases
+section in the [configuration file](#configuration-file). With databases
 other than SQLite3, you'll need to install supporting packages in order to
 connect to the database. See [Examples](#examples), below.
 
