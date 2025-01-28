@@ -88,6 +88,9 @@ class Configuration:
     Represents the parsed configuration data.
     """
     def __init__(self: Self, configs: list[ConnectionConfig]) -> None:
+        """
+        Initialize a Configuration object.
+        """
         self._configs = configs
 
     def lookup(self: Self, spec: str) -> list[ConnectionConfig] | None:
@@ -238,6 +241,10 @@ def init_bindings_and_completion(engine: Engine) -> None:
     """
 
     def complete_tables(text: str, full_line: str) -> list[str]:
+        """
+        A readline completer for table names. Used for the SCHEMA, INDEXES,
+        and FKEYS commands.
+        """
         if full_line.endswith(" "):
             # Already fully completed
             options = []
@@ -328,6 +335,10 @@ def display_results(
         return
 
     def get_datum_as_string(row: Dict[str, Any], col: str) -> str:
+        """
+        Get the value of a column as a string. If SQLAlchemy returned None
+        for a value, substitute "NULL".
+        """
         if (val := row.get(col)) is None:
             return "NULL"
         else:
@@ -336,6 +347,10 @@ def display_results(
     def make_output_line(
         fields: list[str], delim: str = "|", pad_char: str = " "
     ) -> str:
+        """
+        Format a single output line from a result set, ensuring that the
+        output is suitably padding and aligned.
+        """
         return (
             f"{delim}{pad_char}"
             + f"{pad_char}{delim}{pad_char}".join(fields)
@@ -598,6 +613,9 @@ def show_indexes(table_name: str, engine: Engine) -> None:
     NO_RESULTS_MESSAGE = "No indexes."
 
     def show_generic_indexes() -> None:
+        """
+        Use SQLAlchemy's generic methods to display indexes.
+        """
         inspector = sqlalchemy.inspect(engine)
         indexes = inspector.get_indexes(table_name)
         adjusted_data: list[dict[str, str]] = []
@@ -676,6 +694,9 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
     NO_RESULTS_MESSAGE = "No foreign keys."
 
     def show_generic_indexes() -> None:
+        """
+        Display foreign keys using SQLAlchemy's generic methods.
+        """
         inspector = sqlalchemy.inspect(engine)
         indexes = inspector.get_foreign_keys(table_name)
         adjusted_data: list[dict[str, str]] = []
@@ -845,6 +866,9 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
     from sqlalchemy.engine.result import MappingResult
 
     def export_csv(mappings: MappingResult) -> None:
+        """
+        Export a table as CSV to the file.
+        """
         print(f"Exporting {table_name} as CSV to {where} ...")
         with open(where, mode="w", encoding="utf-8") as f:
             columns = list(mappings.keys())
@@ -854,6 +878,9 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
                 c_out.writerow(dict(row))
 
     def export_json(mappings: MappingResult) -> None:
+        """
+        Export the table as JSON (lines) to a file.
+        """
         print(f"Exporting {table_name} as JSON (lines) to {where} ...")
         with open(where, mode="w", encoding="utf-8") as f:
             while (row := mappings.fetchone()) is not None:
@@ -1043,16 +1070,20 @@ def load_config(config: Path) -> Configuration | None:
     except Exception as e:
         raise ConfigurationError(f'Unable to read "{config}": {e}')
 
-    # For environment substitution, we want a reference to a non-existent
-    # variable to substitute "", rather than throw an error (as with
-    # Template.substitute()) or leave the reference intact (as with
-    # Template.safe_substitute()). To do that, we simply use a custom
-    # dictionary class.
     class EnvDict(dict):
+        """
+        For environment substitution, we want a reference to a non-existent
+        variable to substitute "", rather than throw an error (as with
+        Template.substitute()) or leave the reference intact (as with
+        Template.safe_substitute()). To do that, we simply use a custom
+        dictionary class.
+        """
         def __init__(self: Self, *args, **kw) -> None:
+            """Initialize the dictionary"""
             self.update(*args, **kw)
 
         def __getitem__(self: Self, key: Any) -> Any:
+            """Get an item from the dictionary"""
             return super().get(key, "")
 
     env = EnvDict(**os.environ)

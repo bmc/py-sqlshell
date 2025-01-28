@@ -30,11 +30,11 @@ do
   # free to comment this out.
   if [ "$i" = "." ]
   then
-    echo "pycheck " sqlshell/*.py
-    pycheck sqlshell/*.py || die "pycheck failed"
+    echo "pycheck -cf " sqlshell/*.py
+    pycheck -cf sqlshell/*.py || die "pycheck failed"
   else
-    echo "pycheck $i"
-    pycheck $i || die "pycheck failed"
+    echo "pycheck -cf $i"
+    pycheck -cf $i || die "pycheck failed"
   fi
 
   #echo "Sorting imports in $i"
