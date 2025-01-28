@@ -87,7 +87,7 @@ class Configuration:
     """
     Represents the parsed configuration data.
     """
-    def __init__(self, configs: list[ConnectionConfig]):
+    def __init__(self: Self, configs: list[ConnectionConfig]) -> None:
         self._configs = configs
 
     def lookup(self: Self, spec: str) -> list[ConnectionConfig] | None:
@@ -1049,10 +1049,10 @@ def load_config(config: Path) -> Configuration | None:
     # Template.safe_substitute()). To do that, we simply use a custom
     # dictionary class.
     class EnvDict(dict):
-        def __init__(self, *args, **kw):
+        def __init__(self: Self, *args, **kw) -> None:
             self.update(*args, **kw)
 
-        def __getitem__(self, key) -> Any:
+        def __getitem__(self: Self, key: Any) -> Any:
             return super().get(key, "")
 
     env = EnvDict(**os.environ)
