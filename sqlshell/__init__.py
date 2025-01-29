@@ -7,6 +7,7 @@ rudimentary completion.
 
 Run with -h or --help for an extended usage message.
 """
+# pylint: disable=too-many-lines,fixme,too-few-public-methods
 
 import atexit
 import csv
@@ -23,16 +24,19 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, cast, Self
 
 import click
 import sqlalchemy
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.result import MappingResult
 from sqlalchemy.orm import Session
+from sqlalchemy.schema import CreateTable
 
 NAME = "sqlshell"
-VERSION = "0.1.11"
-CLICK_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+VERSION = "0.1.12"
+CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
 # or the BSD Editline library, and it's not selectable. It's whatever
@@ -109,18 +113,23 @@ class Configuration:
         return matches
 
 
-class ConfigurationError(Exception):
+class SQLShellException(Exception):
+    """
+    Base class for exceptions thrown by the SQL shell. Also thrown explicitly
+    for certain errors in the SQL shell.
+    """
+
+
+class ConfigurationError(SQLShellException):
     """
     Thrown to indicate a configuration error.
     """
-    pass
 
 
-class AbortError(Exception):
+class AbortError(SQLShellException):
     """
     Thrown to force an abort with a non-zero exit code.
     """
-    pass
 
 
 # This is a series of (command(s), explanation) tuples. show_help() will wrap
@@ -190,17 +199,17 @@ HELP_EPILOG = (
 )
 
 
-match os.environ.get("COLUMNS", str(DEFAULT_SCREEN_WIDTH)):
+match os.environ.get("COLUMNS"):
     case None:
         SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
-    case s:
+    case s_width:
         try:
-            SCREEN_WIDTH = int(s)
+            SCREEN_WIDTH = int(s_width)
         except ValueError:
             SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
             print(
                 "The COLUMNS environment variable has an invalid value of "
-                f'"{s}". Using screen width of {DEFAULT_SCREEN_WIDTH}.'
+                f'"{s_width}". Using screen width of {DEFAULT_SCREEN_WIDTH}.'
             )
 
 
@@ -284,15 +293,15 @@ def init_bindings_and_completion(engine: Engine) -> None:
 
         if state < len(options):
             return options[state]
-        else:
-            return None
+
+        return None
 
     if (readline.__doc__ is not None) and ("libedit" in readline.__doc__):
         init_file = EDITLINE_BINDINGS_FILE
-        print(f"Using editline (libedit).")
+        print("Using editline (libedit).")
         completion_binding = "bind '^I' rl_complete"
     else:
-        print(f"Using GNU readline.")
+        print("Using GNU readline.")
         init_file = READLINE_BINDINGS_FILE
         completion_binding = "Control-I: rl_complete"
 
@@ -306,6 +315,7 @@ def init_bindings_and_completion(engine: Engine) -> None:
     readline.set_completer(command_completer)
 
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments
 def display_results(
     columns: list[str],
     data: list[Dict[str, Any]],
@@ -330,6 +340,8 @@ def display_results(
     :param elapsed: the elapsed time to run the query that produced the results,
         or None not to display an elapsed time
     """
+    # pylint: disable=too-many-locals
+
     if len(data) == 0:
         print(no_results_message or "No data.")
         return
@@ -341,8 +353,8 @@ def display_results(
         """
         if (val := row.get(col)) is None:
             return "NULL"
-        else:
-            return str(val)
+
+        return str(val)
 
     def make_output_line(
         fields: list[str], delim: str = "|", pad_char: str = " "
@@ -359,7 +371,7 @@ def display_results(
 
     # For each column, figure out how wide to make it in the display, based on
     # the data.
-    widths: dict[str, int] = dict()
+    widths: dict[str, int] = {}
     for col in columns:
         widths[col] = len(col)
 
@@ -428,7 +440,6 @@ def run_sql(
     :param no_results_message: The message to display if there are no results,
         or None for the default
     """
-    from time import perf_counter
 
     try:
         if echo_statement:
@@ -468,6 +479,7 @@ def run_sql(
     except sqlalchemy.exc.SQLAlchemyError as e:
         print(str(e))
 
+    # pylint: disable=broad-except
     except Exception as e:
         print(f"{type(e)}: {e}")
         traceback.print_exception(e, file=sys.stdout)
@@ -515,7 +527,6 @@ def show_schema(table_name: str, engine: Engine) -> None:
         """
         Get the CREATE TABLE statement from SQLAlchemy, and display that.
         """
-        from sqlalchemy.schema import CreateTable
 
         schema_str = str(CreateTable(t).compile(engine)).strip()
         # Replace any hard tabs with 2 spaces.
@@ -535,7 +546,9 @@ def show_schema(table_name: str, engine: Engine) -> None:
         case [t]:
             table = t
         case many:
-            raise Exception(f'Too many matches for "{table_name}": {many}')
+            raise SQLShellException(
+                f'Too many matches for "{table_name}": {many}'
+            )
 
     # If there's a SQL statement that will generate a nice tabular result,
     # use that. Otherwise, just pull the "CREATE TABLE" statement out of
@@ -610,6 +623,7 @@ def show_indexes(table_name: str, engine: Engine) -> None:
     :param table_name: The name of the table for which indexes are to be shown
     :param engine: The SQLAlchemy engine for the database
     """
+    # pylint: disable=invalid-name
     NO_RESULTS_MESSAGE = "No indexes."
 
     def show_generic_indexes() -> None:
@@ -620,7 +634,7 @@ def show_indexes(table_name: str, engine: Engine) -> None:
         indexes = inspector.get_indexes(table_name)
         adjusted_data: list[dict[str, str]] = []
         for idx in indexes:
-            adj_dict: dict[str, str] = dict()
+            adj_dict: dict[str, str] = {}
             adj_dict["table"] = table_name
             adj_dict["name"] = idx.get("name") or "?"
             columns = (cast(list, idx.get("column_names")) or [])
@@ -650,7 +664,9 @@ def show_indexes(table_name: str, engine: Engine) -> None:
         case [_]:
             pass
         case many:
-            raise Exception(f'Too many matches for "{table_name}": {many}')
+            raise SQLShellException(
+                f'Too many matches for "{table_name}": {many}'
+            )
 
     # If there's a SQL statement that will generate a nice tabular result,
     # use that. Otherwise, just pull the "CREATE TABLE" statement out of
@@ -691,6 +707,7 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
         shown
     :param engine: The SQLAlchemy engine for the database
     """
+    # pylint: disable=invalid-name
     NO_RESULTS_MESSAGE = "No foreign keys."
 
     def show_generic_indexes() -> None:
@@ -701,7 +718,7 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
         indexes = inspector.get_foreign_keys(table_name)
         adjusted_data: list[dict[str, str]] = []
         for idx in indexes:
-            adj_dict: dict[str, str] = dict()
+            adj_dict: dict[str, str] = {}
             adj_dict["name"] = idx.get("name") or "?"
             adj_dict["columns"] = ", ".join(
                 idx.get("constrained_columns") or []
@@ -733,7 +750,9 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
         case [_]:
             pass
         case many:
-            raise Exception(f'Too many matches for "{table_name}": {many}')
+            raise SQLShellException(
+                f'Too many matches for "{table_name}": {many}'
+            )
 
     # If there's a SQL statement that will generate a nice tabular result,
     # use that. Otherwise, just pull the "CREATE TABLE" statement out of
@@ -863,7 +882,6 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
     :param where: the path of the CSV file to overwrite
     :param engine: the SQLAlchemy engine of the database
     """
-    from sqlalchemy.engine.result import MappingResult
 
     def export_csv(mappings: MappingResult) -> None:
         """
@@ -875,6 +893,7 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
             c_out = csv.DictWriter(f, fieldnames=columns)
             c_out.writeheader()
             while (row := mappings.fetchone()) is not None:
+                # pylint: disable=use-dict-literal
                 c_out.writerow(dict(row))
 
     def export_json(mappings: MappingResult) -> None:
@@ -884,7 +903,7 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
         print(f"Exporting {table_name} as JSON (lines) to {where} ...")
         with open(where, mode="w", encoding="utf-8") as f:
             while (row := mappings.fetchone()) is not None:
-                out: dict[str, Any] = dict()
+                out: dict[str, Any] = {}
                 for key, value in row.items():
                     if isinstance(value, datetime):
                         out[key] = value.isoformat()
@@ -920,6 +939,7 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
         with Session(engine) as session:
             with session.execute(sqlalchemy.text(sql)) as cursor:
                 export(cursor.mappings())
+    # pylint: disable=broad-except
     except Exception as e:
         print(f"Export failed: {e}")
         traceback.print_exception(e, file=sys.stdout)
@@ -991,10 +1011,10 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     limit = int(s)
 
                 case [Command.LIMIT.value, _]:
-                    print(f".limit takes a non-negative integer")
+                    print(".limit takes a non-negative integer")
 
                 case [Command.LIMIT.value, *_]:
-                    print(f"Usage: .limit <n>")
+                    print("Usage: .limit <n>")
 
                 case [Command.TABLES.value]:
                     show_tables(engine)
@@ -1059,6 +1079,11 @@ def load_config(config: Path) -> Configuration | None:
     :param config: Path to the configuration file, which does not have to
         exist
     """
+    # These two imports are deliberately inside the function, because
+    # they are implementation-dependent. We don't want to import them at
+    # the top, because if we change how the configuration is loaded, it
+    # should be isolated completely in here.
+    # pylint: disable=import-outside-toplevel
     import tomllib
     from string import Template
 
@@ -1068,6 +1093,7 @@ def load_config(config: Path) -> Configuration | None:
         with open(config, mode='rb') as f:
             data = tomllib.load(f)
     except Exception as e:
+        # pylint: disable=raise-missing-from
         raise ConfigurationError(f'Unable to read "{config}": {e}')
 
     class EnvDict(dict):
@@ -1219,4 +1245,5 @@ def main(db_spec: str, history: str, config: str) -> None:
         sys.exit(1)
 
 if __name__ == "__main__":
+    # pylint: disable=no-value-for-parameter
     main()
