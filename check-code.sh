@@ -26,6 +26,14 @@ do
     pyright $i || die "pyright failed"
   fi
 
+  echo "pylint $i"
+  if [ "$i" = "." ]
+  then
+    pylint sqlshell || die "pylint failed"
+  else
+    pylint $i || die "pylint failed"
+  fi
+
   # pycheck is a personal tool in a private repo. Feel
   # free to comment this out.
   if [ "$i" = "." ]
