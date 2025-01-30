@@ -91,7 +91,7 @@ The currently supported commands are as follows. `.help` from within `sqlshell`
 provides more information on each one.
 
 * `.exit`, `.quit`, Ctrl-D: Quit `sqlshell`
-* `.export`: Export a table to a CSV file
+* `.export`: Export a table to a CSV or JSON file
 * `.fk`: Show foreign key constraints
 * `.help` or `?`: Show help
 * `.history`: Show the command history
@@ -137,6 +137,14 @@ to connect to my database:
 ```shell
 $ sqlshell postgresql+pg8000://scott:tiger@localhost/test
 ```
+
+If you prefer `psycopg2`, the process is similar:
+
+```shell
+$ pip install psycopg2
+$ sqlshell postgresql+psycopg2://scott:tiger@localhost/test
+```
+
 
 ### MySQL
 
