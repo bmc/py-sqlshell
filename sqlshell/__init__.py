@@ -25,7 +25,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict, cast, Self
+from typing import Any, Dict, cast, Self, Tuple
 
 import click
 import sqlalchemy
@@ -92,11 +92,21 @@ class Configuration:
     """
     Represents the parsed configuration data.
     """
-    def __init__(self: Self, configs: list[ConnectionConfig]) -> None:
+    def __init__(
+        self: Self, configs: list[ConnectionConfig], path: Path
+    ) -> None:
         """
         Initialize a Configuration object.
         """
         self._configs = configs
+        self._path = path
+
+    @property
+    def path(self: Self) -> Path:
+        """
+        Returns the path associated with the configuration.
+        """
+        return self._path
 
     def lookup(self: Self, spec: str) -> list[ConnectionConfig] | None:
         """
@@ -130,6 +140,13 @@ class ConfigurationError(SQLShellException):
 class AbortError(SQLShellException):
     """
     Thrown to force an abort with a non-zero exit code.
+    """
+
+
+class TooManyMatchesError(SQLShellException):
+    """
+    Thrown to indicate that a database URL specification matched too many
+    entries in the configuration file.
     """
 
 
@@ -1029,6 +1046,57 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
         traceback.print_exception(e, file=sys.stdout)
 
 
+def lookup_db_url(configuration: Configuration | None,
+                  name: str,
+                  history: Path) -> Tuple[str, Path]:
+    """
+    Look up a database URL in the configuration. The passed name might be
+    a complete URL, or it might be a name that matches a section in the
+    configuration file.
+
+    :param configuration: configuration object or None
+    :param name:          (partial or full) name of config section, or a
+                          complete URL
+    :param history:       path to the history file to use (from the command
+                          line) or the default history file
+
+    :returns: a tuple of the URL and the history file path
+
+    :raises: TooManyMatchesError if `name` matches more than one config section
+    """
+
+    res: Tuple[str, Path] = (name, history)
+
+    if configuration is not None:
+        match configuration.lookup(name):
+            case None:
+                # Use the db_spec as the URL, with the default history.
+                pass
+
+            case [cfg]:
+                url = cfg.url
+                if cfg.history_file is not None:
+                    history_file = cfg.history_file
+                else:
+                    history_file = history
+
+                res = (url, history_file)
+
+            case []:
+                # Should not happen.
+                assert False
+
+            case configs:
+                match_str = ", ".join([c.name for c in configs])
+                raise TooManyMatchesError(textwrap.fill(
+                    f'"{name}" matches more than one section in '
+                    f'"{configuration.path}": {match_str}',
+                    width=SCREEN_WIDTH
+                ))
+
+    return res
+
+
 def run_command_loop(db_url: str, history_path: Path) -> None:
     """
     Read and process commands.
@@ -1239,7 +1307,7 @@ def load_config(config: Path) -> Configuration | None:
             history_file=history
         ))
 
-    return Configuration(configs)
+    return Configuration(configs=configs, path=config)
 
 
 @click.command(
@@ -1314,36 +1382,10 @@ def main(db_spec: str, history: str, config: str) -> None:
         else:
             configuration = load_config(Path(config))
 
-        url = db_spec
-        history_file: Path = Path(history)
-
-        if configuration is not None:
-            match configuration.lookup(db_spec):
-                case None:
-                    # Use the db_spec as the URL, with the default history.
-                    pass
-
-                case [cfg]:
-                    url = cfg.url
-                    if cfg.history_file is not None:
-                        history_file = cfg.history_file
-
-                case []:
-                    # Should not happen.
-                    assert False
-
-                case configs:
-                    match_str = ", ".join([c.name for c in configs])
-                    raise AbortError(textwrap.fill(
-                        f'"{db_spec}" matches more than one section in '
-                        f'"{config}": {match_str}',
-                        width=SCREEN_WIDTH
-                    ))
-
-
+        url, history_file = lookup_db_url(configuration, db_spec, Path(history))
         run_command_loop(url, Path(history_file))
 
-    except (AbortError, ConfigurationError) as e:
+    except (AbortError, ConfigurationError, TooManyMatchesError) as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
 
