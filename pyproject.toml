@@ -13,8 +13,9 @@ name = "sqlshell"
 # dynamically discovered. See [tools.setuptools.dynamic], below.
 dynamic = ["version", "readme"]
 dependencies = [
-  "click>=8.1.7",
-  "SQLAlchemy>=2.0.29"
+  "click>=8.1.7,<9.0.0",
+  "SQLAlchemy>=2.0.29,<3.0.0",
+  "pandas>=2.2.3,<3.0.0",
 ]
 description = "A very simple SQL shell, using SQLAlchemy."
 requires-python = ">= 3.11"

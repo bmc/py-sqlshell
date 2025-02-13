@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 
 NAME = "sqlshell"
-VERSION = "0.1.12"
+VERSION = "0.2.0"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -64,6 +64,7 @@ class Command(StrEnum):
     Non-SQL commands the shell supports.
     """
     EXPORT = ".export"
+    IMPORT = ".import"
     FKEYS = ".fk"
     HELP1 = ".help"
     HELP2 = "?"
@@ -166,6 +167,28 @@ HELP = (
         r"(e.g., \s), be sure to enclose it in quotes.",
     ),
     (
+        f"{Command.IMPORT.value} [-n] <table> <path>",
+        "Import a CSV or JSON file into a table. If the table exists, "
+        f"f{Command.IMPORT.value} will append to it. If the table does not "
+        'exist, it will be created. If -n (for "new-only") is specified, the '
+        "table must not already exist; the command will abort if it does. If "
+        '<path> ends in ".csv", the file is assumed to be a CSV file. If '
+        '<path> ends in ".json", the file is assumed to be a JSON Lines file, '
+        f"as if it were produced by the f{Command.EXPORT.value} command. You "
+        "use ~ as a shorthand for your home directory. This command uses "
+        "Pandas import the file, so it will attempt to infer a schema. It "
+        "can't however, infer a primary key or any foreign keys. If you need "
+        "those, you can add them manually after the import, or you can "
+        "precreate an empty table with appropriate constraints. Note also "
+        "that Pandas' schema inference isn't perfect, especially with a column "
+        "where all the incoming values are NULL. You may need to alter the "
+        "table's column types after the import. On import, all column names "
+        "are forced to lower case, so that column names don't require quoting "
+        "in databases like Postgres. Also, if the column names in the incoming "
+        "data are incompatible with a database's naming format, the import "
+        "will fail.",
+    ),
+    (
         f"{Command.INDEXES.value} <table_name>",
         "Display the indexes for <table_name>. Uses database-native commands, "
         "where possible. Otherwise, SQLAlchemy index information is displayed."
@@ -188,7 +211,9 @@ HELP = (
 )
 
 HELP_EPILOG = (
-    "Anything else is interpreted as SQL.",
+    "Anything else is interpreted as SQL. Multi-line SQL statements are not "
+    "currently supported; a newline ends the statement. You do not need to end "
+    "SQL statements with a semicolon, though you can do so, if you wish.",
     "",
     (
         "Note that you can use tab-completion on the dot-commands. Also, "
@@ -872,6 +897,65 @@ def show_history_matching(line: str) -> None:
         print(str(e))
 
 
+def import_table(
+    table_name: str,
+    import_file: Path,
+    engine: Engine,
+    exist_ok: bool
+) -> None:
+    """
+    Import a file into a table. If the table doesn't exist, it is created.
+    If it does exist, the code tries to append to the table.
+
+    If the file ends in ".csv", the table is imported from a CSV file. If the
+    file ends in ".json", it is assumed to be a JSON Lines file, as would be
+    produced by the export_table() function.
+
+    The code uses Pandas to import the file.
+
+    :param table_name:  the name of the table to import into
+    :param import_file: the path to the file to import
+    :param engine:      the SQLAlchemy engine of the database
+    :param exist_ok:    if True, the table can already exist. Otherwise, it's
+                        an error if the table exists.
+    """
+    print(f"Loading Pandas...")
+    import pandas as pd
+
+    match import_file.suffix:
+        case ".csv":
+            df = pd.read_csv(import_file)
+
+        case ".json":
+            df = pd.read_json(import_file, lines=True)
+
+        case ext:
+            print(f'"{ext}" is not a valid file extension for import.')
+            return
+
+    tables = get_tables(engine)
+    exists = any(t.name.lower() == table_name.lower() for t in tables)
+    if exists and not exist_ok:
+        print(f'Table "{table_name}" already exists, and you specified -n.')
+        return
+
+    # With Postgres, if the column names in the incoming Pandas data frame
+    # are mixed case, Pandas will create the columns in the table as mixed
+    # case, which means they'll have to be quoted in SQL. Force them all to
+    # lower case, first.
+    column_map: dict[str, str] = {}
+    for col in df.columns:
+        column_map[col] = col.lower()
+    df.rename(column_map, axis="columns", inplace=True)
+
+    df.to_sql(
+        name=table_name,
+        if_exists="append" if exist_ok else "fail",
+        con=engine,
+    )
+
+
+
 def export_table(table_name: str, where: Path, engine: Engine) -> None:
     """
     Export a table to a text file. If the file ("where") ends in ".csv",
@@ -978,10 +1062,10 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                 case []:
                     pass
 
-                case [(Command.QUIT1 | Command.QUIT2)]:
+                case [(Command.QUIT1.value | Command.QUIT2.value)]:
                     break
 
-                case [(Command.QUIT1 | Command.QUIT2), *_]:
+                case [(Command.QUIT1.value | Command.QUIT2.value), *_]:
                     print(f"{Command.QUIT1.value} and {Command.QUIT2.value} "
                           "take nor parameters.")
 
@@ -997,6 +1081,25 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
 
                 case [Command.FKEYS.value, *_]:
                     print(f"Usage: {Command.FKEYS.value} <table_name>")
+
+                case [Command.IMPORT.value, table_name, path]:
+                    import_table(
+                        table_name=table_name,
+                        import_file=Path(path),
+                        engine=engine,
+                        exist_ok=True
+                    )
+
+                case [Command.IMPORT.value, "-n", table_name, path]:
+                    import_table(
+                        table_name=table_name,
+                        import_file=Path(path),
+                        engine=engine,
+                        exist_ok=False
+                    )
+
+                case [Command.IMPORT.value, *_]:
+                    print(f"Usage: {Command.IMPORT.value} [-n] <table> <path>")
 
                 case [Command.INDEXES.value, table_name]:
                     show_indexes(table_name, engine)

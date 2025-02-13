@@ -95,6 +95,7 @@ provides more information on each one.
 * `.fk`: Show foreign key constraints
 * `.help` or `?`: Show help
 * `.history`: Show the command history
+* `.import`: Import a CSV or JSON file into a table (with restrictions)
 * `.indexes`: Show the indexes for a table
 * `.limit`: Set or clear the maximum number of rows shown from a query
 * `.schema`: Show the schema for a table
