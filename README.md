@@ -182,7 +182,7 @@ $ sqlshell sqlite:///test.db
 
 If you get tired of typing the same URL all the time, you can record
 commonly-used connection information in the optional
-[configuration file](#configuration-file) file.
+[configuration file](#configuration-file).
 
 ## Configuration File
 
