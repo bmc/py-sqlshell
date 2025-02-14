@@ -90,6 +90,7 @@ commands `sqlshell` supports start with `.`.
 The currently supported commands are as follows. `.help` from within `sqlshell`
 provides more information on each one.
 
+* `.connect`: Connect to a different database
 * `.exit`, `.quit`, Ctrl-D: Quit `sqlshell`
 * `.export`: Export a table to a CSV or JSON file
 * `.fk`: Show foreign key constraints
