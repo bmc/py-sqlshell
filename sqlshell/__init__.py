@@ -187,13 +187,9 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
     ),
     (
         (Command.HELP1.value, Command.HELP2.value),
-        f"{Command.HELP1.value} or {Command.HELP2.value}",
-        "Show this help."
-    ),
-    (
-        (Command.HELP1.value, Command.HELP2.value),
-        f"{Command.HELP1.value} <command>, {Command.HELP2.value} <command>",
-        "Show help for a specific command."
+        f"{Command.HELP1.value} or {Command.HELP2.value} [<command>]",
+        "Show help for <command>. If <command> is omitted, show help for "
+        "all commands."
     ),
     (
         (Command.HISTORY.value,),
@@ -402,6 +398,9 @@ def init_bindings_and_completion(engine: Engine) -> None:
                 Command.FKEYS.value
             ):
                 options = complete_tables(text, full_line)
+            case [s, *_] if s in (Command.HELP1.value, Command.HELP2.value):
+                options = [c for c in commands if c.startswith(text)]
+
             case [s, *_] if s in commands:
                 # An already completed command. There's nothing to complete.
                 options = []
@@ -628,8 +627,9 @@ def print_help(command: str | None = None) -> None:
 
     # How much room do we have left for text? Allow for separating " - ".
 
+    max_width = SCREEN_WIDTH - 1 # 1-character right margin
     separator = " - "
-    text_width = SCREEN_WIDTH - len(separator) - prefix_width
+    text_width = max_width - len(separator) - prefix_width
     if text_width < 0:
         # Screw it. Just pick some value.
         text_width = DEFAULT_SCREEN_WIDTH // 2
@@ -642,7 +642,7 @@ def print_help(command: str | None = None) -> None:
             padding = " " * (prefix_width + len(separator))
             print(f"{padding}{text_line}")
 
-    if command is not None:
+    if command is None:
         print("")
         for line in HELP_EPILOG:
             wrapped = textwrap.fill(line, width=SCREEN_WIDTH)
@@ -1062,7 +1062,6 @@ def import_table(
         if_exists="append" if exist_ok else "fail",
         con=engine,
     )
-
 
 
 def export_table(table_name: str, where: Path, engine: Engine) -> None:
