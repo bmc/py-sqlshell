@@ -17,7 +17,7 @@ Database command shells are common. PostgreSQL has `psql`. MySQL has
 `mysql`. SQLite has `sqlite3`. Oracle has `sqlplus`.
 
 But they're all different. They have different commands, different capabilities,
-and different ways of showing query output. (And the `sqlite` output format is
+and different ways of showing query output. (And the `sqlite3` output format is
 just awful.)
 
 `sqlshell` is not as feature-rich as the database-specific command shells,
