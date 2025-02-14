@@ -351,6 +351,7 @@ def init_history(
 
     # Use a lambda here to capture the history_path variable. This ensures
     # we get a different lambda each time.
+    # pylint: disable=unnecessary-lambda,unnecessary-lambda-assignment
     f = lambda: readline.write_history_file(str(history_path))
     atexit.register(f)
 
@@ -611,18 +612,18 @@ def print_help(command: str | None = None) -> None:
          for general help on all commands
     """
     if command is None:
-        help = list(HELP)
+        help_topics = list(HELP)
     else:
-        help = []
+        help_topics = []
         for commands, prefix, text in HELP:
             if command in commands:
-                help.append((commands, prefix, text))
-        if len(help) == 0:
+                help_topics.append((commands, prefix, text))
+        if len(help_topics) == 0:
             error(f'Unknown command "{command}".')
             return
 
     prefix_width = 0
-    for _, prefix, _ in help:
+    for _, prefix, _ in help_topics:
         prefix_width = max(prefix_width, len(prefix))
 
     # How much room do we have left for text? Allow for separating " - ".
@@ -634,7 +635,7 @@ def print_help(command: str | None = None) -> None:
         # Screw it. Just pick some value.
         text_width = DEFAULT_SCREEN_WIDTH // 2
 
-    for _, prefix, text in help:
+    for _, prefix, text in help_topics:
         padded_prefix = prefix.ljust(prefix_width)
         text_lines = textwrap.wrap(text, width=text_width)
         print(f"{padded_prefix}{separator}{text_lines[0]}")
@@ -1028,7 +1029,10 @@ def import_table(
     :param exist_ok:    if True, the table can already exist. Otherwise, it's
                         an error if the table exists.
     """
-    print(f"Loading Pandas...")
+    # Pandas is a big library that can take a noticeable amount of time to
+    # load, so we only import it if we need it.
+    print("Loading Pandas...")
+    # pylint: disable=import-outside-toplevel
     import pandas as pd
 
     match import_file.suffix:
@@ -1228,6 +1232,7 @@ def connect_to_new_db(
         return (None, history_file)
 
 
+# pylint: disable=too-many-statements
 def run_command_loop(
     db_spec: str,
     configuration: Configuration | None,
@@ -1240,6 +1245,7 @@ def run_command_loop(
     :param history_path: the path to the history file to use, which does not
         have to exist
     """
+    # pylint: disable=too-many-locals
     def make_prompt(engine: Engine) -> str:
         """
         Make the prompt for the command loop.
