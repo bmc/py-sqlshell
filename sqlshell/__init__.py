@@ -25,7 +25,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, cast, Dict, Self, Tuple
+from typing import Any, Callable, cast, Dict, Self, Sequence as Seq, Tuple
 
 import click
 import sqlalchemy
@@ -152,14 +152,16 @@ class TooManyMatchesError(SQLShellException):
     """
 
 
-# This is a series of (command(s), explanation) tuples. show_help() will wrap
+# This is a series of (command(s), explanation) tuples. print_help() will wrap
 # the explanations.
-HELP = (
+HELP: Seq[Tuple[Seq[str], str, str]] = (
     (
+        (Command.QUIT1.value, Command.QUIT2.value),
         f"{Command.QUIT1.value}, {Command.QUIT2.value}, or Ctrl-D",
         f"Quit {NAME}."
     ),
     (
+        (Command.CONNECT.value,),
         f"{Command.CONNECT.value} <name>",
         "Connect to a different database. <name> is either a full SQLAlchemy "
         "URL or the name of a section in the configuration file. If <name> is "
@@ -168,6 +170,7 @@ HELP = (
         "and the current database will not be changed."
     ),
     (
+        (Command.EXPORT.value,),
         f"{Command.EXPORT.value} <table> <path>",
         'Export the contents of table to a file. If <path> ends in ".csv", '
         'the table will be exported to a CSV file. If <path> ends in ".json", '
@@ -176,24 +179,37 @@ HELP = (
         'for your home directory (e.g., "~/table.json")',
     ),
     (
+        (Command.FKEYS.value,),
         f"{Command.FKEYS.value} <table_name>",
         "Display the list of foreign keys for a table. Note: <table_name> is "
         "the table with the foreign key constraints, not the table the "
         "foreign key(s) reference."
     ),
-    (f"{Command.HELP1.value} or {Command.HELP2.value}", "Show this help."),
     (
+        (Command.HELP1.value, Command.HELP2.value),
+        f"{Command.HELP1.value} or {Command.HELP2.value}",
+        "Show this help."
+    ),
+    (
+        (Command.HELP1.value, Command.HELP2.value),
+        f"{Command.HELP1.value} <command>, {Command.HELP2.value} <command>",
+        "Show help for a specific command."
+    ),
+    (
+        (Command.HISTORY.value,),
         f"{Command.HISTORY.value} [<n>]",
         "Show the history. If <n> is supplied, show the last <n> history "
         "items. <n> of 0 is the same as omitting <n>.",
     ),
     (
+        (Command.HISTORY.value,),
         f"{Command.HISTORY.value} re",
         "Show all history items matching regular expression <re>. If your "
         "pattern contains spaces or regular expression backslash sequences "
         r"(e.g., \s), be sure to enclose it in quotes.",
     ),
     (
+        (Command.IMPORT.value,),
         f"{Command.IMPORT.value} [-n] <table> <path>",
         "Import a CSV or JSON file into a table. If the table exists, "
         f"f{Command.IMPORT.value} will append to it. If the table does not "
@@ -216,25 +232,44 @@ HELP = (
         "will fail.",
     ),
     (
+        (Command.INDEXES.value,),
         f"{Command.INDEXES.value} <table_name>",
         "Display the indexes for <table_name>. Uses database-native commands, "
         "where possible. Otherwise, SQLAlchemy index information is displayed."
     ),
     (
+        (Command.LIMIT.value,),
         f"{Command.LIMIT.value} <n>",
         "Show only <n> rows from a SELECT. 0 means unlimited.",
     ),
-    (f"{Command.LIMIT.value}", "Show the current limit setting"),
-    (f"{Command.SCHEMA.value} <table>", "Show the schema for table <table>"),
-    (f"{Command.TABLES.value}", "Show all tables in the database"),
     (
+        (Command.LIMIT.value,),
+        f"{Command.LIMIT.value}",
+        "Show the current limit setting"
+    ),
+    (
+        (Command.SCHEMA.value,),
+        f"{Command.SCHEMA.value} <table>",
+        "Show the schema for table <table>"
+    ),
+    (
+        (Command.TABLES.value,),
+        f"{Command.TABLES.value}",
+        "Show all tables in the database"
+    ),
+    (
+        (Command.TABLES.value,),
         f"{Command.TABLES.value} <re>",
         "Show all tables in the database whose names match the specified "
         "regular expression. Matching is case-blind. If your pattern contains "
         r"spaces or regular expression backslash sequences (e.g., \s), be sure "
         "to enclose it in quotes.",
     ),
-    (f"{Command.URL.value}", "Show the current database URL"),
+    (
+        (Command.URL.value,),
+        f"{Command.URL.value}",
+        "Show the current database URL"
+    ),
 )
 
 HELP_EPILOG = (
@@ -569,12 +604,26 @@ def run_sql(
         traceback.print_exception(e, file=sys.stdout)
 
 
-def print_help() -> None:
+def print_help(command: str | None = None) -> None:
     """
     Display the help output.
+
+    :param command: The command for which help is being requested, or None
+         for general help on all commands
     """
+    if command is None:
+        help = list(HELP)
+    else:
+        help = []
+        for commands, prefix, text in HELP:
+            if command in commands:
+                help.append((commands, prefix, text))
+        if len(help) == 0:
+            error(f'Unknown command "{command}".')
+            return
+
     prefix_width = 0
-    for prefix, _ in HELP:
+    for _, prefix, _ in help:
         prefix_width = max(prefix_width, len(prefix))
 
     # How much room do we have left for text? Allow for separating " - ".
@@ -585,7 +634,7 @@ def print_help() -> None:
         # Screw it. Just pick some value.
         text_width = DEFAULT_SCREEN_WIDTH // 2
 
-    for prefix, text in HELP:
+    for _, prefix, text in help:
         padded_prefix = prefix.ljust(prefix_width)
         text_lines = textwrap.wrap(text, width=text_width)
         print(f"{padded_prefix}{separator}{text_lines[0]}")
@@ -593,10 +642,11 @@ def print_help() -> None:
             padding = " " * (prefix_width + len(separator))
             print(f"{padding}{text_line}")
 
-    print("")
-    for line in HELP_EPILOG:
-        wrapped = textwrap.fill(line, width=SCREEN_WIDTH)
-        print(wrapped)
+    if command is not None:
+        print("")
+        for line in HELP_EPILOG:
+            wrapped = textwrap.fill(line, width=SCREEN_WIDTH)
+            print(wrapped)
 
 
 def show_schema(table_name: str, engine: Engine) -> None:
@@ -1268,6 +1318,9 @@ def run_command_loop(
 
                 case [(Command.HELP1.value | Command.HELP2.value)]:
                     print_help()
+
+                case [(Command.HELP1.value | Command.HELP2.value), topic]:
+                    print_help(topic)
 
                 case [(Command.HELP1.value | Command.HELP2.value), *_]:
                     print(f"{Command.HELP1.value} and {Command.HELP2.value} "
