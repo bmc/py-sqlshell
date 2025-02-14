@@ -262,6 +262,6 @@ unwilling to spend time getting this to work on Windows.
 
 ## License
 
-`sqlshell` is copyright © 2024 Brian M. Clapper and is released under the
+`sqlshell` is copyright © 2024-2025 Brian M. Clapper and is released under the
 [Apache Software License](https://apache.org/licenses/LICENSE-2.0), version
 2.0. A text copy of the license is available in this repository.
