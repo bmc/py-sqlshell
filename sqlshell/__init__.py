@@ -36,7 +36,7 @@ from sqlalchemy.schema import CreateTable
 from termcolor import colored
 
 NAME = "sqlshell"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
