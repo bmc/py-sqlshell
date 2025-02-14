@@ -25,7 +25,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Dict, cast, Self, Tuple
+from typing import Any, Callable, cast, Dict, Self, Tuple
 
 import click
 import sqlalchemy
@@ -33,6 +33,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import MappingResult
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
+from termcolor import colored
 
 NAME = "sqlshell"
 VERSION = "0.2.0"
@@ -63,6 +64,7 @@ class Command(StrEnum):
     """
     Non-SQL commands the shell supports.
     """
+    CONNECT = ".connect"
     EXPORT = ".export"
     IMPORT = ".import"
     FKEYS = ".fk"
@@ -158,6 +160,14 @@ HELP = (
         f"Quit {NAME}."
     ),
     (
+        f"{Command.CONNECT.value} <name>",
+        "Connect to a different database. <name> is either a full SQLAlchemy "
+        "URL or the name of a section in the configuration file. If <name> is "
+        "a configuration file section, you only need to specify enough of the "
+        "string to be unique. If it's not unique, you'll see an error message, "
+        "and the current database will not be changed."
+    ),
+    (
         f"{Command.EXPORT.value} <table> <path>",
         'Export the contents of table to a file. If <path> ends in ".csv", '
         'the table will be exported to a CSV file. If <path> ends in ".json", '
@@ -241,6 +251,12 @@ HELP_EPILOG = (
 )
 
 
+# This is an engine cache, indexed by SQLAlchemy URL. It's used to avoid
+# creating an engine for the same URL multiple times, which can happen if
+# the .connect command is used multiple times with the same URL.
+engine_cache: dict[str, Engine] = {}
+
+
 match os.environ.get("COLUMNS"):
     case None:
         SCREEN_WIDTH = DEFAULT_SCREEN_WIDTH
@@ -253,6 +269,13 @@ match os.environ.get("COLUMNS"):
                 "The COLUMNS environment variable has an invalid value of "
                 f'"{s_width}". Using screen width of {DEFAULT_SCREEN_WIDTH}.'
             )
+
+
+def error(msg: str) -> None:
+    """
+    Print error messages in a consistent way.
+    """
+    print(f"{colored('Error:', 'red')} {msg}", file=sys.stderr)
 
 
 def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
@@ -269,19 +292,38 @@ def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
     return sorted(list(metadata.tables.values()), key=lambda t: t.name.lower())
 
 
-def init_history(history_path: Path) -> None:
+def init_history(
+    history_path: Path,
+    prev_func: Callable[[], None] | None = None
+) -> Callable[[], None]:
     """
     Load the local readline history file.
 
     :param history_path: Path of the history file. It doesn't have to exist.
+    :param prev_func: The previously registered history function, if any.
+        This function will be called before being unregistered and replaced.
+
+    Returns the registered history function.
     """
+
+    if prev_func is not None:
+        prev_func()
+        atexit.unregister(prev_func)
+        readline.clear_history()
+
     with suppress(FileNotFoundError):
         print(f'Loading history from "{history_path}".')
         readline.read_history_file(str(history_path))
         # default history len is -1 (infinite), which may grow unruly
 
     readline.set_history_length(HISTORY_LENGTH)
-    atexit.register(readline.write_history_file, str(history_path))
+
+    # Use a lambda here to capture the history_path variable. This ensures
+    # we get a different lambda each time.
+    f = lambda: readline.write_history_file(str(history_path))
+    atexit.register(f)
+
+    return f
 
 
 def init_bindings_and_completion(engine: Engine) -> None:
@@ -519,11 +561,11 @@ def run_sql(
                 session.commit()
 
     except sqlalchemy.exc.SQLAlchemyError as e:
-        print(str(e))
+        error(str(e))
 
     # pylint: disable=broad-except
     except Exception as e:
-        print(f"{type(e)}: {e}")
+        error(f"{type(e)}: {e}")
         traceback.print_exception(e, file=sys.stdout)
 
 
@@ -583,7 +625,7 @@ def show_schema(table_name: str, engine: Engine) -> None:
     tables = get_tables(engine)
     match [t for t in tables if t.name.lower() == table_name.lower()]:
         case []:
-            print(f'Table "{table_name}" does not exist.')
+            error(f'Table "{table_name}" does not exist.')
             return
         case [t]:
             table = t
@@ -651,10 +693,10 @@ def show_tables_matching(line: str, engine: Engine) -> None:
                 print(t.name)
 
     except re.error as e:
-        print(f"Bad regular expression: {e}")
+        error(f"Bad regular expression: {e}")
 
     except ValueError as e:
-        print(str(e))
+        error(str(e))
 
 
 def show_indexes(table_name: str, engine: Engine) -> None:
@@ -701,7 +743,7 @@ def show_indexes(table_name: str, engine: Engine) -> None:
     tables = get_tables(engine)
     match [t for t in tables if t.name.lower() == table_name.lower()]:
         case []:
-            print(f'Table "{table_name}" does not exist.')
+            error(f'Table "{table_name}" does not exist.')
             return
         case [_]:
             pass
@@ -787,7 +829,7 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
     tables = get_tables(engine)
     match [t for t in tables if t.name.lower() == table_name.lower()]:
         case []:
-            print(f'Table "{table_name}" does not exist.')
+            error(f'Table "{table_name}" does not exist.')
             return
         case [_]:
             pass
@@ -908,10 +950,10 @@ def show_history_matching(line: str) -> None:
                 print(format_history_item(hist_line, i))
 
     except re.error as e:
-        print(f"Bad regular expression: {e}")
+        error(f"Bad regular expression: {e}")
 
     except ValueError as e:
-        print(str(e))
+        error(str(e))
 
 
 def import_table(
@@ -947,13 +989,13 @@ def import_table(
             df = pd.read_json(import_file, lines=True)
 
         case ext:
-            print(f'"{ext}" is not a valid file extension for import.')
+            error(f'"{ext}" is not a valid file extension for import.')
             return
 
     tables = get_tables(engine)
     exists = any(t.name.lower() == table_name.lower() for t in tables)
     if exists and not exist_ok:
-        print(f'Table "{table_name}" already exists, and you specified -n.')
+        error(f'Table "{table_name}" already exists, and you specified -n.')
         return
 
     # With Postgres, if the column names in the incoming Pandas data frame
@@ -1023,13 +1065,13 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
         case ".json":
             export = export_json
         case "":
-            print(
+            error(
                 "Cannot determine export format, because export file "
                 "has no extension."
             )
             return
         case ext:
-            print(
+            error(
                 "Cannot determine export format, because file extension "
                 f'"{ext}" is not ".csv" or ".json".'
             )
@@ -1065,39 +1107,83 @@ def lookup_db_url(configuration: Configuration | None,
     :raises: TooManyMatchesError if `name` matches more than one config section
     """
 
-    res: Tuple[str, Path] = (name, history)
+    if configuration is None:
+        return (name, history)
 
-    if configuration is not None:
-        match configuration.lookup(name):
-            case None:
-                # Use the db_spec as the URL, with the default history.
-                pass
+    match configuration.lookup(name):
+        case None:
+            # Use the db_spec as the URL, with the default history.
+            return (name, history)
 
-            case [cfg]:
-                url = cfg.url
-                if cfg.history_file is not None:
-                    history_file = cfg.history_file
-                else:
-                    history_file = history
+        case [cfg]:
+            url = cfg.url
+            if cfg.history_file is not None:
+                history_file = cfg.history_file
+            else:
+                history_file = history
 
-                res = (url, history_file)
+            return (url, history_file)
 
-            case []:
-                # Should not happen.
-                assert False
+        case []:
+            # Should not happen.
+            assert False
 
-            case configs:
-                match_str = ", ".join([c.name for c in configs])
-                raise TooManyMatchesError(textwrap.fill(
-                    f'"{name}" matches more than one section in '
-                    f'"{configuration.path}": {match_str}',
-                    width=SCREEN_WIDTH
-                ))
-
-    return res
+        case configs:
+            match_str = ", ".join([c.name for c in configs])
+            raise TooManyMatchesError(textwrap.fill(
+                f'"{name}" matches more than one section in '
+                f'"{configuration.path}": {match_str}',
+                width=SCREEN_WIDTH
+            ))
 
 
-def run_command_loop(db_url: str, history_path: Path) -> None:
+
+def connect_to_new_db(
+    db_spec: str,
+    configuration: Configuration | None,
+    history_file: Path
+) -> Tuple[Engine | None, Path]:
+    """
+    Connect to a database. Intended to be called only as a result of the
+    Command.CONNECT command.
+
+    :param db_spec: the string representing the config section or URL to which
+        to connect
+    :param configuration: the loaded configuration, or None
+    :param history_file: The path to the history file to use by default
+
+    :returns: the SQLAlchemy engine for the database and the history file path.
+        If the connection fails, None is returned and the current engine is
+        unchanged.
+    """
+    try:
+        url, history_file = lookup_db_url(configuration, db_spec, history_file)
+    except TooManyMatchesError as e:
+        error(str(e))
+        return (None, history_file)
+
+    assert url is not None
+    try:
+        print(f"Connecting to {url} ...")
+        engine = engine_cache.get(url)
+        if engine is None:
+            engine = sqlalchemy.create_engine(url)
+
+        # Some databases don't complain about a bad URL until the first
+        # operation, so let's try to get the list of tables.
+        get_tables(engine)
+        engine_cache[url] = engine
+        return (engine, history_file)
+    except sqlalchemy.exc.SQLAlchemyError as e:
+        error(f"Unable to connect to {url}: {e}")
+        return (None, history_file)
+
+
+def run_command_loop(
+    db_spec: str,
+    configuration: Configuration | None,
+    history_path: Path
+) -> None:
     """
     Read and process commands.
 
@@ -1105,15 +1191,42 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
     :param history_path: the path to the history file to use, which does not
         have to exist
     """
+    def make_prompt(engine: Engine) -> str:
+        """
+        Make the prompt for the command loop.
+
+        :param engine: the SQLAlchemy engine
+        """
+        return f"({engine.name}) > "
+
+    def prepare_readline(
+        engine: Engine,
+        history_file: Path,
+        save_history: Callable[[], None] | None = None
+    ) -> Callable[[], None]:
+        """
+        Prepare readline for the command loop.
+
+        :param engine: the SQLAlchemy engine
+        :param history_file: the path to the history file
+        """
+        save_history = init_history(history_file, save_history)
+        init_bindings_and_completion(engine)
+        return save_history
+
+
     print(f"{NAME}, version {VERSION}\n")
 
-    print(f"Connecting to {db_url}")
-    engine = sqlalchemy.create_engine(db_url)
+    e: Engine | None = None
+    e, history_path = connect_to_new_db(db_spec, configuration, history_path)
+    if e is None:
+        # Already reported.
+        return
 
-    init_history(history_path)
-    init_bindings_and_completion(engine)
+    current_engine: Engine = e
 
-    prompt = f"({engine.name}) > "
+    save_history = prepare_readline(current_engine, history_path)
+    prompt = make_prompt(current_engine)
 
     print()
     print(f".help for help on {NAME} commands")
@@ -1137,6 +1250,22 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     print(f"{Command.QUIT1.value} and {Command.QUIT2.value} "
                           "take nor parameters.")
 
+                case [Command.CONNECT.value, spec]:
+                    e, history_path = connect_to_new_db(
+                        spec, configuration, history_path
+                    )
+                    if e is not None:
+                        # Connection successful.
+                        current_engine = e
+                        prompt = make_prompt(current_engine)
+                        # Save the existing history, and start a new one.
+                        save_history = prepare_readline(
+                            current_engine, history_path, save_history
+                        )
+
+                case [Command.CONNECT.value, *_]:
+                    print(f"Usage: {Command.CONNECT.value} <db_spec>")
+
                 case [(Command.HELP1.value | Command.HELP2.value)]:
                     print_help()
 
@@ -1145,7 +1274,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                           "take no parameters.")
 
                 case [Command.FKEYS.value, table_name]:
-                    show_foreign_keys(table_name, engine)
+                    show_foreign_keys(table_name, current_engine)
 
                 case [Command.FKEYS.value, *_]:
                     print(f"Usage: {Command.FKEYS.value} <table_name>")
@@ -1154,7 +1283,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     import_table(
                         table_name=table_name,
                         import_file=Path(path),
-                        engine=engine,
+                        engine=current_engine,
                         exist_ok=True
                     )
 
@@ -1162,7 +1291,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     import_table(
                         table_name=table_name,
                         import_file=Path(path),
-                        engine=engine,
+                        engine=current_engine,
                         exist_ok=False
                     )
 
@@ -1170,7 +1299,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     print(f"Usage: {Command.IMPORT.value} [-n] <table> <path>")
 
                 case [Command.INDEXES.value, table_name]:
-                    show_indexes(table_name, engine)
+                    show_indexes(table_name, current_engine)
 
                 case [Command.INDEXES.value, *_]:
                     print(f"Usage: {Command.INDEXES.value} <table_name>")
@@ -1188,27 +1317,29 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     print("Usage: .limit <n>")
 
                 case [Command.TABLES.value]:
-                    show_tables(engine)
+                    show_tables(current_engine)
 
                 case [Command.TABLES.value, *_]:
-                    show_tables_matching(line, engine)
+                    show_tables_matching(line, current_engine)
 
                 case [Command.SCHEMA.value, table_name]:
-                    show_schema(table_name, engine)
+                    show_schema(table_name, current_engine)
 
                 case [Command.SCHEMA.value, *_]:
                     print(f"Usage: {Command.SCHEMA.value} <table_name>")
 
                 case [Command.EXPORT.value, table_name, path]:
                     export_table(
-                        table_name=table_name, where=Path(path), engine=engine
+                        table_name=table_name,
+                        where=Path(path),
+                        engine=current_engine
                     )
 
                 case [Command.EXPORT.value, *_]:
                     print(f"Usage: {Command.EXPORT.value} <table> <path>")
 
                 case [Command.URL.value]:
-                    print(engine.url)
+                    print(current_engine.url)
 
                 case [Command.URL.value, *_]:
                     print("{Command.URL.value} takes no arguments.")
@@ -1231,7 +1362,7 @@ def run_command_loop(db_url: str, history_path: Path) -> None:
                     print(f'"{cmd}" is an unknown "." command.')
 
                 case _:
-                    run_sql(sql=line, engine=engine, limit=limit)
+                    run_sql(sql=line, engine=current_engine, limit=limit)
 
         except EOFError:
             # Ctrl-D to input().
@@ -1382,8 +1513,7 @@ def main(db_spec: str, history: str, config: str) -> None:
         else:
             configuration = load_config(Path(config))
 
-        url, history_file = lookup_db_url(configuration, db_spec, Path(history))
-        run_command_loop(url, Path(history_file))
+        run_command_loop(db_spec, configuration, Path(history))
 
     except (AbortError, ConfigurationError, TooManyMatchesError) as e:
         print(str(e), file=sys.stderr)
