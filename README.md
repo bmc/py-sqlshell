@@ -14,7 +14,7 @@ environment.
 ## Motivation
 
 Database command shells are common. PostgreSQL has `psql`. MySQL has
-`mysql`. SQLite3 has `sqlite`. Oracle has `sqlplus`.
+`mysql`. SQLite has `sqlite3`. Oracle has `sqlplus`.
 
 But they're all different. They have different commands, different capabilities,
 and different ways of showing query output. (And the `sqlite` output format is
