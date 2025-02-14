@@ -39,7 +39,7 @@ check out a copy of this repository. Then, you'll use the Python
 $ pip install build
 $ cd py-sqlshell
 $ ./build.sh clean build
-$ pip install dist/sqlshell-0.1.8-py3-none-any.whl
+$ pip install dist/sqlshell-0.3.0-py3-none-any.whl
 ```
 
 (Alter the version stamp in the `.whl` file as necessary.)
