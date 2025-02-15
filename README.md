@@ -39,7 +39,7 @@ check out a copy of this repository. Then, you'll use the Python
 $ pip install build
 $ cd py-sqlshell
 $ ./build.sh clean build
-$ pip install dist/sqlshell-0.3.0-py3-none-any.whl
+$ pip install dist/sqlshell-0.4.0-py3-none-any.whl
 ```
 
 (Alter the version stamp in the `.whl` file as necessary.)
@@ -103,11 +103,10 @@ provides more information on each one.
 * `.tables`: Show the names of the tables in the current database
 * `.url`: Show the SQLAlchemy URL for the current database
 
-Anything else you type is assumed to be SQL. **Limitation:** Multi-line SQL
-statements are _not_ currently supported; a newline ends the statement. You do
-not need to end SQL statements with a semicolon, though you can do so, if you
-wish. (I may extend `sqlshell` to support multiline SQL in the future, at which
-point trailing semicolons will be required.)
+Anything else you type is assumed to be SQL. SQL statements _must_ end with
+a semicolon (";"), and multi-line input is supported. Newlines are not
+preserved in the input, and a multi-line statement is sent to the database and
+written to the history as a single line.
 
 #### Command Completion
 

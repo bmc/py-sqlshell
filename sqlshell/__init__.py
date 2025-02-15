@@ -7,6 +7,7 @@ rudimentary completion.
 
 Run with -h or --help for an extended usage message.
 """
+
 # pylint: disable=too-many-lines,fixme,too-few-public-methods
 
 import atexit
@@ -25,7 +26,9 @@ from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, cast, Dict, Self, Sequence as Seq, Tuple
+from typing import Any, Callable, Dict, Self
+from typing import Sequence as Seq
+from typing import Tuple, cast
 
 import click
 import sqlalchemy
@@ -36,7 +39,7 @@ from sqlalchemy.schema import CreateTable
 from termcolor import colored
 
 NAME = "sqlshell"
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -55,6 +58,7 @@ class EngineName(StrEnum):
     Explicitly supported SQLAlchemy engines. Other engines will work, but
     there's explicit, database-specific logic that's implemented for these.
     """
+
     POSTGRES = "postgresql"
     MYSQL = "mysql"
     SQLITE = "sqlite"
@@ -64,6 +68,7 @@ class Command(StrEnum):
     """
     Non-SQL commands the shell supports.
     """
+
     CONNECT = ".connect"
     EXPORT = ".export"
     IMPORT = ".import"
@@ -85,6 +90,7 @@ class ConnectionConfig:
     """
     A single connection configuration from the configuration file.
     """
+
     name: str
     url: str
     history_file: Path | None
@@ -94,6 +100,7 @@ class Configuration:
     """
     Represents the parsed configuration data.
     """
+
     def __init__(
         self: Self, configs: list[ConnectionConfig], path: Path
     ) -> None:
@@ -116,8 +123,7 @@ class Configuration:
         configurations, or None if no match.
         """
         matches = [
-            c for c in self._configs
-            if c.name.lower().startswith(spec.lower())
+            c for c in self._configs if c.name.lower().startswith(spec.lower())
         ]
 
         if len(matches) == 0:
@@ -158,7 +164,7 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
     (
         (Command.QUIT1.value, Command.QUIT2.value),
         f"{Command.QUIT1.value}, {Command.QUIT2.value}, or Ctrl-D",
-        f"Quit {NAME}."
+        f"Quit {NAME}.",
     ),
     (
         (Command.CONNECT.value,),
@@ -167,7 +173,7 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
         "URL or the name of a section in the configuration file. If <name> is "
         "a configuration file section, you only need to specify enough of the "
         "string to be unique. If it's not unique, you'll see an error message, "
-        "and the current database will not be changed."
+        "and the current database will not be changed.",
     ),
     (
         (Command.EXPORT.value,),
@@ -183,13 +189,13 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
         f"{Command.FKEYS.value} <table_name>",
         "Display the list of foreign keys for a table. Note: <table_name> is "
         "the table with the foreign key constraints, not the table the "
-        "foreign key(s) reference."
+        "foreign key(s) reference.",
     ),
     (
         (Command.HELP1.value, Command.HELP2.value),
         f"{Command.HELP1.value} or {Command.HELP2.value} [<command>]",
         "Show help for <command>. If <command> is omitted, show help for "
-        "all commands."
+        "all commands.",
     ),
     (
         (Command.HISTORY.value,),
@@ -231,7 +237,7 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
         (Command.INDEXES.value,),
         f"{Command.INDEXES.value} <table_name>",
         "Display the indexes for <table_name>. Uses database-native commands, "
-        "where possible. Otherwise, SQLAlchemy index information is displayed."
+        "where possible. Otherwise, SQLAlchemy index information is displayed.",
     ),
     (
         (Command.LIMIT.value,),
@@ -241,17 +247,17 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
     (
         (Command.LIMIT.value,),
         f"{Command.LIMIT.value}",
-        "Show the current limit setting"
+        "Show the current limit setting",
     ),
     (
         (Command.SCHEMA.value,),
         f"{Command.SCHEMA.value} <table>",
-        "Show the schema for table <table>"
+        "Show the schema for table <table>",
     ),
     (
         (Command.TABLES.value,),
         f"{Command.TABLES.value}",
-        "Show all tables in the database"
+        "Show all tables in the database",
     ),
     (
         (Command.TABLES.value,),
@@ -264,21 +270,22 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
     (
         (Command.URL.value,),
         f"{Command.URL.value}",
-        "Show the current database URL"
+        "Show the current database URL",
     ),
 )
 
 HELP_EPILOG = (
-    "Anything else is interpreted as SQL. Multi-line SQL statements are not "
-    "currently supported; a newline ends the statement. You do not need to end "
-    "SQL statements with a semicolon, though you can do so, if you wish.",
+    'Anything else is interpreted as SQL. SQL statements must end with a ";", '
+    "and multi-line input is supported. Newlines are not preserved in the "
+    "input, and a multi-line statement is sent to the database and written "
+    "to the history as a single line.",
+
     "",
-    (
-        "Note that you can use tab-completion on the dot-commands. Also, "
-        "as a special case, you can tab-complete available table names after "
-        f'typing "{Command.SCHEMA.value}" or "{Command.INDEXES.value}". '
-        "Completion for SQL statements is not available."
-    ),
+
+    "Note that you can use tab-completion on the dot-commands. Also, "
+    "as a special case, you can tab-complete available table names after "
+    f'typing "{Command.SCHEMA.value}" or "{Command.INDEXES.value}". '
+    "Completion for SQL statements is not available."
 )
 
 
@@ -324,8 +331,7 @@ def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
 
 
 def init_history(
-    history_path: Path,
-    prev_func: Callable[[], None] | None = None
+    history_path: Path, prev_func: Callable[[], None] | None = None
 ) -> Callable[[], None]:
     """
     Load the local readline history file.
@@ -374,8 +380,11 @@ def init_bindings_and_completion(engine: Engine) -> None:
             # Already fully completed
             options = []
         else:
-            options = [t.name for t in get_tables(engine)
-                       if t.name.lower().startswith(text.lower())]
+            options = [
+                t.name
+                for t in get_tables(engine)
+                if t.name.lower().startswith(text.lower())
+            ]
 
         return options
 
@@ -396,7 +405,7 @@ def init_bindings_and_completion(engine: Engine) -> None:
             case [s, *_] if s in (
                 Command.SCHEMA.value,
                 Command.INDEXES.value,
-                Command.FKEYS.value
+                Command.FKEYS.value,
             ):
                 options = complete_tables(text, full_line)
             case [s, *_] if s in (Command.HELP1.value, Command.HELP2.value):
@@ -585,7 +594,7 @@ def run_sql(
                         limit=limit,
                         total=total,
                         elapsed=elapsed,
-                        no_results_message=no_results_message
+                        no_results_message=no_results_message,
                     )
                 session.commit()
 
@@ -611,13 +620,16 @@ def print_help(command: str | None = None) -> None:
     :param command: The command for which help is being requested, or None
          for general help on all commands
     """
+    # pylint: disable=too-many-branches
     if command is None:
         help_topics = list(HELP)
     else:
+        # Print help on only the entries that match the command string.
         help_topics = []
         for commands, prefix, text in HELP:
             if command in commands:
                 help_topics.append((commands, prefix, text))
+
         if len(help_topics) == 0:
             error(f'Unknown command "{command}".')
             return
@@ -628,7 +640,7 @@ def print_help(command: str | None = None) -> None:
 
     # How much room do we have left for text? Allow for separating " - ".
 
-    max_width = SCREEN_WIDTH - 1 # 1-character right margin
+    max_width = SCREEN_WIDTH - 1  # 1-character right margin
     separator = " - "
     text_width = max_width - len(separator) - prefix_width
     if text_width < 0:
@@ -646,8 +658,11 @@ def print_help(command: str | None = None) -> None:
     if command is None:
         print("")
         for line in HELP_EPILOG:
-            wrapped = textwrap.fill(line, width=SCREEN_WIDTH)
-            print(wrapped)
+            if line.strip() == "":
+                print()
+            else:
+                wrapped = textwrap.fill(line, width=SCREEN_WIDTH)
+                print(wrapped)
 
 
 def show_schema(table_name: str, engine: Engine) -> None:
@@ -772,7 +787,7 @@ def show_indexes(table_name: str, engine: Engine) -> None:
             adj_dict: dict[str, str] = {}
             adj_dict["table"] = table_name
             adj_dict["name"] = idx.get("name") or "?"
-            columns = (cast(list, idx.get("column_names")) or [])
+            columns = cast(list, idx.get("column_names")) or []
             adj_dict["columns"] = ", ".join(columns)
             unique = "true" if idx.get("unique", False) else "false"
             adj_dict["unique"] = unique
@@ -783,7 +798,7 @@ def show_indexes(table_name: str, engine: Engine) -> None:
             data=adjusted_data,
             limit=0,
             total=len(adjusted_data),
-            no_results_message=NO_RESULTS_MESSAGE
+            no_results_message=NO_RESULTS_MESSAGE,
         )
 
     # Validate that the table exists first, using SQLAlchemy. This strategy
@@ -829,7 +844,7 @@ def show_indexes(table_name: str, engine: Engine) -> None:
             sql=sql,
             engine=engine,
             echo_statement=True,
-            no_results_message=NO_RESULTS_MESSAGE
+            no_results_message=NO_RESULTS_MESSAGE,
         )
 
 
@@ -869,7 +884,7 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
             data=adjusted_data,
             limit=0,
             total=len(adjusted_data),
-            no_results_message=NO_RESULTS_MESSAGE
+            no_results_message=NO_RESULTS_MESSAGE,
         )
 
     # Validate that the table exists first, using SQLAlchemy. This strategy
@@ -906,8 +921,8 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
                 'constraint_schema as "database", '
                 'table_name as "table", '
                 'column_name as "column", '
-                'table_schema as referenced_database, '
-                'referenced_table_name as references_table, '
+                "table_schema as referenced_database, "
+                "referenced_table_name as references_table, "
                 "referenced_column_name as references_column "
                 "from information_schema.key_column_usage "
                 "where referenced_table_schema = (select database()) and "
@@ -941,7 +956,7 @@ def show_foreign_keys(table_name: str, engine: Engine) -> None:
             sql=sql,
             engine=engine,
             echo_statement=True,
-            no_results_message=NO_RESULTS_MESSAGE
+            no_results_message=NO_RESULTS_MESSAGE,
         )
 
 
@@ -1008,10 +1023,7 @@ def show_history_matching(line: str) -> None:
 
 
 def import_table(
-    table_name: str,
-    import_file: Path,
-    engine: Engine,
-    exist_ok: bool
+    table_name: str, import_file: Path, engine: Engine, exist_ok: bool
 ) -> None:
     """
     Import a file into a table. If the table doesn't exist, it is created.
@@ -1141,9 +1153,9 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
         traceback.print_exception(e, file=sys.stdout)
 
 
-def lookup_db_url(configuration: Configuration | None,
-                  name: str,
-                  history: Path) -> Tuple[str, Path]:
+def lookup_db_url(
+    configuration: Configuration | None, name: str, history: Path
+) -> Tuple[str, Path]:
     """
     Look up a database URL in the configuration. The passed name might be
     a complete URL, or it might be a name that matches a section in the
@@ -1183,18 +1195,17 @@ def lookup_db_url(configuration: Configuration | None,
 
         case configs:
             match_str = ", ".join([c.name for c in configs])
-            raise TooManyMatchesError(textwrap.fill(
-                f'"{name}" matches more than one section in '
-                f'"{configuration.path}": {match_str}',
-                width=SCREEN_WIDTH
-            ))
-
+            raise TooManyMatchesError(
+                textwrap.fill(
+                    f'"{name}" matches more than one section in '
+                    f'"{configuration.path}": {match_str}',
+                    width=SCREEN_WIDTH,
+                )
+            )
 
 
 def connect_to_new_db(
-    db_spec: str,
-    configuration: Configuration | None,
-    history_file: Path
+    db_spec: str, configuration: Configuration | None, history_file: Path
 ) -> Tuple[Engine | None, Path]:
     """
     Connect to a database. Intended to be called only as a result of the
@@ -1231,12 +1242,80 @@ def connect_to_new_db(
         error(f"Unable to connect to {url}: {e}")
         return (None, history_file)
 
+def make_prompt(engine: Engine, primary: bool = True) -> str:
+    """
+    Make the prompt for the command loop.
+
+    :param engine: the SQLAlchemy engine
+    :param primary: whether this is the primary prompt (True) or a secondary
+
+    """
+    return f"({engine.name}) > " if primary else "? "
+    #suffix = ">" if primary else ":"
+    #return f"({engine.name}) {suffix} "
+
+
+def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
+    """
+    Given the first line of what might be a multi-line SQL statement, read
+    the rest of the statement (if necessary), and run it.
+    """
+    def statement_is_complete(s: str) -> Tuple[bool, str | None]:
+        """
+        Determine if a SQL statement is complete. Looks for a semicolon at
+        the end of the string, and no open quotes.
+        """
+        in_quote = None
+        for c in s:
+            if in_quote is not None:
+                if c == in_quote:
+                    in_quote = None
+            elif c in ('"', "'"):
+                in_quote = c
+
+        complete = (in_quote is None) and s.endswith(';')
+        return (complete, in_quote)
+
+    def remove_last_history_item() -> None:
+        """
+        Remove the last history item, which is most recently-read line.
+        """
+        # Note that, for remove_history_item(), the position is 0-based, not
+        # 1-based.
+        readline.remove_history_item(readline.get_current_history_length() - 1)
+
+    statement = first_line
+    # Remove the history item corresponding to this line, so we don't get
+    # partial lines in the history. We'll add one combined line at the end.
+    remove_last_history_item()
+    prompt = make_prompt(engine, primary=False)
+    while True:
+        complete, in_quote = statement_is_complete(statement)
+        if complete:
+            break
+
+        try:
+            # TODO: Need to deal with the multiline readline input.
+            line = input(prompt)
+            remove_last_history_item()
+            if in_quote:
+                statement += line
+            else:
+                statement += " " + line
+        except EOFError:
+            print()
+            return
+        except KeyboardInterrupt:
+            print()
+            return
+
+    readline.add_history(statement)
+    run_sql(statement, engine, limit, echo_statement=True)
+
 
 # pylint: disable=too-many-statements
 def run_command_loop(
-    db_spec: str,
-    configuration: Configuration | None,
-    history_path: Path
+    db_spec: str, configuration: Configuration | None, history_path: Path
 ) -> None:
     """
     Read and process commands.
@@ -1246,18 +1325,11 @@ def run_command_loop(
         have to exist
     """
     # pylint: disable=too-many-locals
-    def make_prompt(engine: Engine) -> str:
-        """
-        Make the prompt for the command loop.
-
-        :param engine: the SQLAlchemy engine
-        """
-        return f"({engine.name}) > "
 
     def prepare_readline(
         engine: Engine,
         history_file: Path,
-        save_history: Callable[[], None] | None = None
+        save_history: Callable[[], None] | None = None,
     ) -> Callable[[], None]:
         """
         Prepare readline for the command loop.
@@ -1268,7 +1340,6 @@ def run_command_loop(
         save_history = init_history(history_file, save_history)
         init_bindings_and_completion(engine)
         return save_history
-
 
     print(f"{NAME}, version {VERSION}\n")
 
@@ -1294,6 +1365,7 @@ def run_command_loop(
             # input() automatically uses the readline library, if it's
             # been loaded.
             line = input(prompt)
+
             match line.split():
                 case []:
                     pass
@@ -1302,8 +1374,10 @@ def run_command_loop(
                     break
 
                 case [(Command.QUIT1.value | Command.QUIT2.value), *_]:
-                    print(f"{Command.QUIT1.value} and {Command.QUIT2.value} "
-                          "take nor parameters.")
+                    print(
+                        f"{Command.QUIT1.value} and {Command.QUIT2.value} "
+                        "take nor parameters."
+                    )
 
                 case [Command.CONNECT.value, spec]:
                     e, history_path = connect_to_new_db(
@@ -1328,8 +1402,10 @@ def run_command_loop(
                     print_help(topic)
 
                 case [(Command.HELP1.value | Command.HELP2.value), *_]:
-                    print(f"{Command.HELP1.value} and {Command.HELP2.value} "
-                          "take no parameters.")
+                    print(
+                        f"{Command.HELP1.value} and {Command.HELP2.value} "
+                        "take no parameters."
+                    )
 
                 case [Command.FKEYS.value, table_name]:
                     show_foreign_keys(table_name, current_engine)
@@ -1342,7 +1418,7 @@ def run_command_loop(
                         table_name=table_name,
                         import_file=Path(path),
                         engine=current_engine,
-                        exist_ok=True
+                        exist_ok=True,
                     )
 
                 case [Command.IMPORT.value, "-n", table_name, path]:
@@ -1350,7 +1426,7 @@ def run_command_loop(
                         table_name=table_name,
                         import_file=Path(path),
                         engine=current_engine,
-                        exist_ok=False
+                        exist_ok=False,
                     )
 
                 case [Command.IMPORT.value, *_]:
@@ -1390,7 +1466,7 @@ def run_command_loop(
                     export_table(
                         table_name=table_name,
                         where=Path(path),
-                        engine=current_engine
+                        engine=current_engine,
                     )
 
                 case [Command.EXPORT.value, *_]:
@@ -1420,12 +1496,16 @@ def run_command_loop(
                     print(f'"{cmd}" is an unknown "." command.')
 
                 case _:
-                    run_sql(sql=line, engine=current_engine, limit=limit)
+                    # Assume SQL. Allow for multiline input.
+                    read_and_run_sql(line, engine=current_engine, limit=limit)
 
         except EOFError:
             # Ctrl-D to input().
             print()
             break
+        except KeyboardInterrupt:
+            print()
+            continue
 
 
 def load_config(config: Path) -> Configuration | None:
@@ -1450,7 +1530,7 @@ def load_config(config: Path) -> Configuration | None:
     assert config.exists()
 
     try:
-        with open(config, mode='rb') as f:
+        with open(config, mode="rb") as f:
             data = tomllib.load(f)
     except Exception as e:
         # pylint: disable=raise-missing-from
@@ -1464,6 +1544,7 @@ def load_config(config: Path) -> Configuration | None:
         Template.safe_substitute()). To do that, we simply use a custom
         dictionary class.
         """
+
         def __init__(self: Self, *args, **kw) -> None:
             """Initialize the dictionary"""
             self.update(*args, **kw)
@@ -1490,19 +1571,14 @@ def load_config(config: Path) -> Configuration | None:
             t = Template(history)
             history = Path(t.substitute(env)).expanduser()
 
-        configs.append(ConnectionConfig(
-            name=key,
-            url=url,
-            history_file=history
-        ))
+        configs.append(
+            ConnectionConfig(name=key, url=url, history_file=history)
+        )
 
     return Configuration(configs=configs, path=config)
 
 
-@click.command(
-    name=NAME,
-    context_settings=CLICK_CONTEXT_SETTINGS
-)
+@click.command(name=NAME, context_settings=CLICK_CONTEXT_SETTINGS)
 @click.option(
     "-H",
     "--history",
@@ -1510,7 +1586,7 @@ def load_config(config: Path) -> Configuration | None:
     default=str(DEFAULT_HISTORY_FILE),
     show_default=True,
     help="Specify location of the default history file. This can be "
-         "overridden, on a per-connection basis, in the configuration."
+    "overridden, on a per-connection basis, in the configuration.",
 )
 @click.option(
     "-c",
@@ -1519,7 +1595,7 @@ def load_config(config: Path) -> Configuration | None:
     default=str(DEFAULT_CONFIG_FILE),
     show_default=True,
     type=click.Path(dir_okay=False),
-    help="The location of the optional configuration file."
+    help="The location of the optional configuration file.",
 )
 @click.version_option(VERSION)
 @click.argument("db_spec", required=True, type=str)
@@ -1576,6 +1652,7 @@ def main(db_spec: str, history: str, config: str) -> None:
     except (AbortError, ConfigurationError, TooManyMatchesError) as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     # pylint: disable=no-value-for-parameter
