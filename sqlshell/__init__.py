@@ -36,6 +36,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import MappingResult
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
+import termcolor
 from termcolor import colored
 
 NAME = "sqlshell"
@@ -1250,9 +1251,8 @@ def make_prompt(engine: Engine, primary: bool = True) -> str:
     :param primary: whether this is the primary prompt (True) or a secondary
 
     """
-    return f"({engine.name}) > " if primary else "? "
-    #suffix = ">" if primary else ":"
-    #return f"({engine.name}) {suffix} "
+    prompt = f"({engine.name}) > " if primary else "? "
+    return colored(prompt, "cyan", attrs=["bold"])
 
 
 def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
@@ -1341,7 +1341,7 @@ def run_command_loop(
         init_bindings_and_completion(engine)
         return save_history
 
-    print(f"{NAME}, version {VERSION}\n")
+    print(colored(f"{NAME}, version {VERSION}\n", "blue", attrs=["bold"]))
 
     e: Engine | None = None
     e, history_path = connect_to_new_db(db_spec, configuration, history_path)
@@ -1350,8 +1350,8 @@ def run_command_loop(
         return
 
     current_engine: Engine = e
-
     save_history = prepare_readline(current_engine, history_path)
+
     prompt = make_prompt(current_engine)
 
     print()
