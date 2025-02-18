@@ -28,7 +28,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict, Self
 from typing import Sequence as Seq
-from typing import Tuple, cast
+from typing import TextIO, Tuple, cast
 
 import click
 import sqlalchemy
@@ -36,7 +36,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import MappingResult
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
-import termcolor
 from termcolor import colored
 
 NAME = "sqlshell"
@@ -52,7 +51,7 @@ READLINE_BINDINGS_FILE = Path("~/.inputrc").expanduser()
 DEFAULT_SCREEN_WIDTH = 79
 DEFAULT_HISTORY_FILE = Path("~/.sqlshell-history").expanduser()
 DEFAULT_CONFIG_FILE = Path("~/.sqlshell.cfg").expanduser()
-
+SQL_LINE_COMMENT_PREFIX = "--"
 
 class EngineName(StrEnum):
     """
@@ -81,6 +80,7 @@ class Command(StrEnum):
     LIMIT = ".limit"
     QUIT1 = ".exit"
     QUIT2 = ".quit"
+    RUN = ".run"
     SCHEMA = ".schema"
     TABLES = ".tables"
     URL = ".url"
@@ -249,6 +249,15 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
         (Command.LIMIT.value,),
         f"{Command.LIMIT.value}",
         "Show the current limit setting",
+    ),
+    (
+        (Command.RUN.value,),
+        f"{Command.RUN.value} <path>",
+        "Run a SQL script file. The file can contain multiple SQL statements, "
+        "and each statement can be on a single line or span multiple lines. "
+        'SQL statements in the file must end with an unquoted ";". '
+        'The pathname must end in ".sql", or it will not be run. In the path, '
+        "you can use ~ as a shorthand for your home directory."
     ),
     (
         (Command.SCHEMA.value,),
@@ -557,7 +566,7 @@ def run_sql(
     limit: int = 0,
     echo_statement: bool = False,
     no_results_message: str | None = None,
-) -> None:
+) -> str | None:
     """
     Run a SQL statement.
 
@@ -568,6 +577,9 @@ def run_sql(
         running it
     :param no_results_message: The message to display if there are no results,
         or None for the default
+
+    :returns: An error message if an error occurred, or None if the statement
+        ran fine
     """
 
     try:
@@ -606,12 +618,13 @@ def run_sql(
                 session.commit()
 
     except sqlalchemy.exc.SQLAlchemyError as e:
-        error(str(e))
+        return str(e)
 
     # pylint: disable=broad-except
     except Exception as e:
-        error(f"{type(e)}: {e}")
+        s = f"{type(e)}: {e}"
         traceback.print_exception(e, file=sys.stdout)
+        return s
 
 
 def print_help(command: str | None = None) -> None:
@@ -1255,27 +1268,106 @@ def make_prompt(engine: Engine, primary: bool = True) -> str:
     return colored(prompt, "cyan", attrs=["bold"])
 
 
+def sql_statement_is_complete(s: str) -> Tuple[bool, str | None]:
+    """
+    Determine if a SQL statement is complete. Looks for a semicolon at
+    the end of the string, and no open quotes.
+
+    :param s: the possibly partial SQL statement to check
+
+    :returns: a tuple of a boolean indicating whether the statement is
+        complete, and a string containing the open quote character, if any.
+        If the open quote character is not None, then the statement has an
+        unclosed quotation (either started with a single or double quote
+        character).
+    """
+    in_quote = None
+    for c in s:
+        if in_quote is not None:
+            if c == in_quote:
+                in_quote = None
+        elif c in ('"', "'"):
+            in_quote = c
+
+    complete = (in_quote is None) and s.endswith(';')
+    return (complete, in_quote)
+
+def read_and_run_sql_file(path: Path, engine: Engine) -> None:
+    """
+    Read and run a SQL file. The file may contain multiple SQL statments,
+    which can be multi-line statements.
+
+    :param path: the path to the SQL file
+    """
+    path = path.expanduser()
+    if not path.exists():
+        error(f'File "{path}" does not exist.')
+        return
+
+    if not path.is_file():
+        error(f'"{path}" is not a file.')
+        return
+
+    in_quote: str | None = None
+    with path.open(mode="r", encoding="utf-8") as f:
+        # Skip all leading blanks and comments, so that the line number
+        # for the first statement we encounter is correct.
+        first_sql_index: int = 0
+        lines: list[str] = []
+        for line in f:
+            if line != "":
+                # Don't want to use rstrip() here, because we want to
+                # preserve trailing whitespace, in case it's inside a quote.
+                if line[-1] == "\n":
+                    line = line[:-1]
+
+            lines.append(line)
+
+        for i, line in enumerate(lines):
+            first_sql_index = i
+            line = line.strip()
+            if (line == "") or line.startswith(SQL_LINE_COMMENT_PREFIX):
+                continue
+
+            break
+
+        if first_sql_index == len(lines):
+            error(f'"{path}" contains no SQL statements.')
+
+        statement: str = ""
+        statement_starting_line: int = first_sql_index + 1
+        for lno, line in enumerate(lines[first_sql_index:],
+                                   start=statement_starting_line):
+            if len(statement) == 0:
+                statement_starting_line = lno
+
+            s = line.strip()
+            # Skip blank lines and SQL comments, provided we're not in a quote.
+            if ((in_quote is None) and
+                (s == "" or s.startswith(SQL_LINE_COMMENT_PREFIX))):
+                continue
+
+            statement += line
+            complete, in_quote = sql_statement_is_complete(statement)
+            if complete:
+                e = run_sql(statement, engine, limit=0, echo_statement=True)
+                print(f"{e=}")
+                if e is not None:
+                    error(e)
+                    break
+
+                statement = ""
+
+        if statement != "":
+            error(f'"{path}", line {statement_starting_line}: File ended with '
+                  "an incomplete SQL statement.")
+
+
 def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
     """
     Given the first line of what might be a multi-line SQL statement, read
     the rest of the statement (if necessary), and run it.
     """
-    def statement_is_complete(s: str) -> Tuple[bool, str | None]:
-        """
-        Determine if a SQL statement is complete. Looks for a semicolon at
-        the end of the string, and no open quotes.
-        """
-        in_quote = None
-        for c in s:
-            if in_quote is not None:
-                if c == in_quote:
-                    in_quote = None
-            elif c in ('"', "'"):
-                in_quote = c
-
-        complete = (in_quote is None) and s.endswith(';')
-        return (complete, in_quote)
-
     def remove_last_history_item() -> None:
         """
         Remove the last history item, which is most recently-read line.
@@ -1290,7 +1382,7 @@ def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
     remove_last_history_item()
     prompt = make_prompt(engine, primary=False)
     while True:
-        complete, in_quote = statement_is_complete(statement)
+        complete, in_quote = sql_statement_is_complete(statement)
         if complete:
             break
 
@@ -1310,7 +1402,9 @@ def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
             return
 
     readline.add_history(statement)
-    run_sql(statement, engine, limit, echo_statement=True)
+    e = run_sql(statement, engine, limit, echo_statement=False)
+    if e is not None:
+        error(e)
 
 
 # pylint: disable=too-many-statements
@@ -1449,6 +1543,12 @@ def run_command_loop(
 
                 case [Command.LIMIT.value, *_]:
                     print("Usage: .limit <n>")
+
+                case [Command.RUN.value, path]:
+                    read_and_run_sql_file(Path(path), current_engine)
+
+                case [Command.RUN.value, *_]:
+                    print(f"Usage: {Command.RUN.value} <path>")
 
                 case [Command.TABLES.value]:
                     show_tables(current_engine)
@@ -1597,9 +1697,21 @@ def load_config(config: Path) -> Configuration | None:
     type=click.Path(dir_okay=False),
     help="The location of the optional configuration file.",
 )
+@click.option(
+    "-t",
+    "--term",
+    is_flag=False,
+    type=str,
+    envvar="TERM",
+    default="vt100",
+    show_default=True,
+    help="The terminal type to use for output. If not specified, the value "
+    "is taken from the environment variable TERM, if it exists. If it does "
+    "not exist, the default is used."
+)
 @click.version_option(VERSION)
 @click.argument("db_spec", required=True, type=str)
-def main(db_spec: str, history: str, config: str) -> None:
+def main(db_spec: str, history: str, config: str, term: str) -> None:
     """
     Prompt for SQL statements and run them against the specified database.
     The <DB_SPEC> parameter is either a SQLAlchemy-compatible URL or the name
@@ -1647,6 +1759,8 @@ def main(db_spec: str, history: str, config: str) -> None:
         else:
             configuration = load_config(Path(config))
 
+        os.environ["TERM"] = term
+        print(f"TERM={os.environ['TERM']}")
         run_command_loop(db_spec, configuration, Path(history))
 
     except (AbortError, ConfigurationError, TooManyMatchesError) as e:
