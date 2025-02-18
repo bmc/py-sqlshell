@@ -1697,18 +1697,6 @@ def load_config(config: Path) -> Configuration | None:
     type=click.Path(dir_okay=False),
     help="The location of the optional configuration file.",
 )
-@click.option(
-    "-t",
-    "--term",
-    is_flag=False,
-    type=str,
-    envvar="TERM",
-    default="vt100",
-    show_default=True,
-    help="The terminal type to use for output. If not specified, the value "
-    "is taken from the environment variable TERM, if it exists. If it does "
-    "not exist, the default is used."
-)
 @click.version_option(VERSION)
 @click.argument("db_spec", required=True, type=str)
 def main(db_spec: str, history: str, config: str, term: str) -> None:
@@ -1759,8 +1747,6 @@ def main(db_spec: str, history: str, config: str, term: str) -> None:
         else:
             configuration = load_config(Path(config))
 
-        os.environ["TERM"] = term
-        print(f"TERM={os.environ['TERM']}")
         run_command_loop(db_spec, configuration, Path(history))
 
     except (AbortError, ConfigurationError, TooManyMatchesError) as e:
