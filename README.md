@@ -39,7 +39,7 @@ check out a copy of this repository. Then, you'll use the Python
 $ pip install build
 $ cd py-sqlshell
 $ ./build.sh clean build
-$ pip install dist/sqlshell-0.4.0-py3-none-any.whl
+$ pip install dist/sqlshell-0.5.0-py3-none-any.whl
 ```
 
 (Alter the version stamp in the `.whl` file as necessary.)
@@ -90,18 +90,19 @@ commands `sqlshell` supports start with `.`.
 The currently supported commands are as follows. `.help` from within `sqlshell`
 provides more information on each one.
 
-* `.connect`: Connect to a different database
-* `.exit`, `.quit`, Ctrl-D: Quit `sqlshell`
-* `.export`: Export a table to a CSV or JSON file
-* `.fk`: Show foreign key constraints
-* `.help` or `?`: Show help
-* `.history`: Show the command history
-* `.import`: Import a CSV or JSON file into a table (with restrictions)
-* `.indexes`: Show the indexes for a table
-* `.limit`: Set or clear the maximum number of rows shown from a query
-* `.schema`: Show the schema for a table
-* `.tables`: Show the names of the tables in the current database
-* `.url`: Show the SQLAlchemy URL for the current database
+* `.connect`: Connect to a different database.
+* `.exit`, `.quit`, Ctrl-D: Quit `sqlshell`.
+* `.export`: Export a table to a CSV or JSON file.
+* `.fk`: Show foreign key constraints.
+* `.help` or `?`: Show help.
+* `.history`: Show the command history.
+* `.import`: Import a CSV or JSON file into a table (with restrictions).
+* `.indexes`: Show the indexes for a table.
+* `.limit`: Set or clear the maximum number of rows shown from a query.
+* `.run`: Run a SQL script. See the in-shell help for details.
+* `.schema`: Show the schema for a table.
+* `.tables`: Show the names of the tables in the current database.
+* `.url`: Show the SQLAlchemy URL for the current database.
 
 Anything else you type is assumed to be SQL. SQL statements _must_ end with
 a semicolon (";"), and multi-line input is supported. Newlines are not
@@ -252,8 +253,8 @@ See `sample.cfg` in this repository for an example.
 ## Maintenance Warnings
 
 I built this tool for my personal use. If you find it useful, as a tool
-or even as an example of how to build a `readline`-based command shell in
-less than 1,000 lines of code, that's great. But this isn't intended to be
+or even as an example of how to build a `readline`-based database shell in
+just over 1,000 lines of code, that's great. But this isn't intended to be
 commercial-grade software, and I'm not aggressively maintaining it. (That's
 one reason it isn't in PyPI right now.) Don't expect me to jump on feature
 requests.

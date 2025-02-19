@@ -6,6 +6,9 @@ Python `readline` module, so it supports history, command editing, and
 rudimentary completion.
 
 Run with -h or --help for an extended usage message.
+
+NOTE: This shell is written using the Python readline module directly, instead
+of the Python cmd module.
 """
 
 # pylint: disable=too-many-lines,fixme,too-few-public-methods
@@ -39,7 +42,7 @@ from sqlalchemy.schema import CreateTable
 from termcolor import colored
 
 NAME = "sqlshell"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -52,6 +55,7 @@ DEFAULT_SCREEN_WIDTH = 79
 DEFAULT_HISTORY_FILE = Path("~/.sqlshell-history").expanduser()
 DEFAULT_CONFIG_FILE = Path("~/.sqlshell.cfg").expanduser()
 SQL_LINE_COMMENT_PREFIX = "--"
+DIGITS = re.compile(r"^\d+$")
 
 class EngineName(StrEnum):
     """
@@ -221,7 +225,7 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
         '<path> ends in ".csv", the file is assumed to be a CSV file. If '
         '<path> ends in ".json", the file is assumed to be a JSON Lines file, '
         f"as if it were produced by the f{Command.EXPORT.value} command. You "
-        "use ~ as a shorthand for your home directory. This command uses "
+        "can use ~ as a shorthand for your home directory. This command uses "
         "Pandas import the file, so it will attempt to infer a schema. It "
         "can't however, infer a primary key or any foreign keys. If you need "
         "those, you can add them manually after the import, or you can "
@@ -255,24 +259,27 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
         f"{Command.RUN.value} <path>",
         "Run a SQL script file. The file can contain multiple SQL statements, "
         "and each statement can be on a single line or span multiple lines. "
-        'SQL statements in the file must end with an unquoted ";". '
-        'The pathname must end in ".sql", or it will not be run. In the path, '
+        'SQL statements in the file must end with an unquoted ";". Newlines in '
+        "SQL statements are not preserved and will be replaced with a single "
+        "space. Multi-line statements will be sent to the database as a single "
+        "SQL statement, which will be echoed to the screen as it is run. Note "
+        'that the path must end in ".sql", or it will not be run. In the path, '
         "you can use ~ as a shorthand for your home directory."
     ),
     (
         (Command.SCHEMA.value,),
         f"{Command.SCHEMA.value} <table>",
-        "Show the schema for table <table>",
+        "Show the schema for table <table>.",
     ),
     (
         (Command.TABLES.value,),
         f"{Command.TABLES.value}",
-        "Show all tables in the database",
+        "List the names of all tables in the database.",
     ),
     (
         (Command.TABLES.value,),
         f"{Command.TABLES.value} <re>",
-        "Show all tables in the database whose names match the specified "
+        "Show the names of all tables in the database that match the specified "
         "regular expression. Matching is case-blind. If your pattern contains "
         r"spaces or regular expression backslash sequences (e.g., \s), be sure "
         "to enclose it in quotes.",
@@ -286,16 +293,16 @@ HELP: Seq[Tuple[Seq[str], str, str]] = (
 
 HELP_EPILOG = (
     'Anything else is interpreted as SQL. SQL statements must end with a ";", '
-    "and multi-line input is supported. Newlines are not preserved in the "
-    "input, and a multi-line statement is sent to the database and written "
-    "to the history as a single line.",
+    "and multi-line input is supported. Newlines are not preserved, and a"
+    "a multi-line statement is sent to the database and written to the history "
+    "as a single line.",
 
     "",
 
-    "Note that you can use tab-completion on the dot-commands. Also, "
-    "as a special case, you can tab-complete available table names after "
-    f'typing "{Command.SCHEMA.value}" or "{Command.INDEXES.value}". '
-    "Completion for SQL statements is not available."
+    "Note that you can use tab-completion on the dot-commands. Also, as a "
+    "special case, you can tab-complete available table names after typing "
+    f'"{Command.SCHEMA.value}" or "{Command.INDEXES.value}". Completion for '
+    "SQL statements is not available."
 )
 
 
@@ -566,7 +573,7 @@ def run_sql(
     limit: int = 0,
     echo_statement: bool = False,
     no_results_message: str | None = None,
-) -> str | None:
+) -> bool:
     """
     Run a SQL statement.
 
@@ -578,9 +585,37 @@ def run_sql(
     :param no_results_message: The message to display if there are no results,
         or None for the default
 
-    :returns: An error message if an error occurred, or None if the statement
-        ran fine
+    :returns: True if it ran successfully. False if it failed (and an error
+        was reported).
     """
+    def execute_sql(sql: str) -> None:
+        """
+        Execute the SQL statement and display the results. Raises an
+        exception if there's an error.
+        """
+        with session.execute(sqlalchemy.text(sql)) as cursor:
+            mappings = cursor.mappings()
+            columns = list(mappings.keys())
+
+            data = []
+            total = 0
+            while (row := mappings.fetchone()) is not None:
+                total += 1
+                if (limit == 0) or (total <= limit):
+                    data.append(row)
+
+            elapsed = perf_counter() - start
+            display_results(
+                columns=columns,
+                data=data,
+                limit=limit,
+                total=total,
+                elapsed=elapsed,
+                no_results_message=no_results_message,
+            )
+
+        session.commit()
+
 
     try:
         if echo_statement:
@@ -589,42 +624,25 @@ def run_sql(
         start = perf_counter()
         with Session(engine) as session:
             try:
-                with session.execute(sqlalchemy.text(sql)) as cursor:
-                    mappings = cursor.mappings()
-                    columns = list(mappings.keys())
-
-                    data = []
-                    total = 0
-                    while (row := mappings.fetchone()) is not None:
-                        total += 1
-                        if (limit == 0) or (total <= limit):
-                            data.append(row)
-
-                    elapsed = perf_counter() - start
-                    display_results(
-                        columns=columns,
-                        data=data,
-                        limit=limit,
-                        total=total,
-                        elapsed=elapsed,
-                        no_results_message=no_results_message,
-                    )
-                session.commit()
+                execute_sql(sql)
+                return True
 
             except sqlalchemy.exc.ResourceClosedError:
                 # Thrown when attempting to get a result from something that
                 # doesn't produce results, such as an INSERT, UPDATE, or DELETE.
                 # Just return quietly. Make sure to commit any work, though.
                 session.commit()
+                return True
 
     except sqlalchemy.exc.SQLAlchemyError as e:
-        return str(e)
+        error(str(e))
+        return False
 
     # pylint: disable=broad-except
     except Exception as e:
-        s = f"{type(e)}: {e}"
+        error(f"{type(e)}: {e}")
         traceback.print_exception(e, file=sys.stdout)
-        return s
+        return False
 
 
 def print_help(command: str | None = None) -> None:
@@ -1082,11 +1100,8 @@ def import_table(
     # are mixed case, Pandas will create the columns in the table as mixed
     # case, which means they'll have to be quoted in SQL. Force them all to
     # lower case, first.
-    column_map: dict[str, str] = {}
-    for col in df.columns:
-        column_map[col] = col.lower()
+    column_map: dict[str, str] = dict((col, col.lower()) for col in df.columns)
     df.rename(column_map, axis="columns", inplace=True)
-
     df.to_sql(
         name=table_name,
         if_exists="append" if exist_ok else "fail",
@@ -1143,17 +1158,8 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
             export = export_csv
         case ".json":
             export = export_json
-        case "":
-            error(
-                "Cannot determine export format, because export file "
-                "has no extension."
-            )
-            return
-        case ext:
-            error(
-                "Cannot determine export format, because file extension "
-                f'"{ext}" is not ".csv" or ".json".'
-            )
+        case _:
+            error('Export file must end in ".csv" or ".json".')
             return
 
     try:
@@ -1161,6 +1167,7 @@ def export_table(table_name: str, where: Path, engine: Engine) -> None:
         with Session(engine) as session:
             with session.execute(sqlalchemy.text(sql)) as cursor:
                 export(cursor.mappings())
+
     # pylint: disable=broad-except
     except Exception as e:
         print(f"Export failed: {e}")
@@ -1243,8 +1250,7 @@ def connect_to_new_db(
     assert url is not None
     try:
         print(f"Connecting to {url} ...")
-        engine = engine_cache.get(url)
-        if engine is None:
+        if (engine := engine_cache.get(url)) is None:
             engine = sqlalchemy.create_engine(url)
 
         # Some databases don't complain about a bad URL until the first
@@ -1264,8 +1270,8 @@ def make_prompt(engine: Engine, primary: bool = True) -> str:
     :param primary: whether this is the primary prompt (True) or a secondary
 
     """
-    prompt = f"({engine.name}) > " if primary else "? "
-    return colored(prompt, "cyan", attrs=["bold"])
+    suffix = ">" if primary else "?"
+    return colored(f"({engine.name}) {suffix} ", "cyan", attrs=["bold"])
 
 
 def sql_statement_is_complete(s: str) -> Tuple[bool, str | None]:
@@ -1292,6 +1298,28 @@ def sql_statement_is_complete(s: str) -> Tuple[bool, str | None]:
     complete = (in_quote is None) and s.endswith(';')
     return (complete, in_quote)
 
+
+def keep_multiline_sql_line(line: str, in_quote: bool) -> bool:
+    """
+    Determine if a line of SQL should be kept as part of a multi-line
+    statement. A line should be kept if it is not empty, and if it is not
+    a comment line. If the line is in a quote, it should be kept.
+
+    :param line: the line of SQL to check
+    :param in_quote: whether the line is in a quote
+
+    :returns: True if the line should be kept, False otherwise
+    """
+    if in_quote:
+        return True
+
+    line = line.lstrip()
+    if line == "":
+        return False
+
+    return not line.startswith(SQL_LINE_COMMENT_PREFIX)
+
+
 def read_and_run_sql_file(path: Path, engine: Engine) -> None:
     """
     Read and run a SQL file. The file may contain multiple SQL statments,
@@ -1299,68 +1327,91 @@ def read_and_run_sql_file(path: Path, engine: Engine) -> None:
 
     :param path: the path to the SQL file
     """
+    def trim_blanks_and_comments(lines: list[str]) -> Tuple[int, list[str]]:
+        """
+        Skips all leading and trailing blank lines and comments in the list
+        of lines. Returns the starting line number (indexed by one) of the
+        first non-blank, non-comment line, as well as a new list of lines.
+        As a special case, if the entire list of lines consists solely of
+        blanks and SQL comments, the returned line number will be 0 and the
+        returned list will be empty.
+        """
+        def trim_them(the_lines: list[str]) -> Tuple[int, list[str]]:
+            lno: int = 0
+            new_lines: list[str] = the_lines
+
+            for i, line in enumerate(the_lines):
+                s = line.lstrip()
+                if (s == "") or s.startswith(SQL_LINE_COMMENT_PREFIX):
+                    continue
+
+                lno = i + 1
+                new_lines = the_lines[i:]
+                break
+
+            if lno == 0:
+                # Special case: The entire file is blank or comments.
+                new_lines = []
+
+            return (lno, new_lines)
+
+        # Remove trailing blank lines and comments.
+        lines.reverse()
+        _, lines = trim_them(lines)
+        lines.reverse()
+
+        # Now, remove leading blank lines and comments.
+        return trim_them(lines)
+
     path = path.expanduser()
-    if not path.exists():
-        error(f'File "{path}" does not exist.')
+    if not (path.exists() and path.is_file()):
+        error(f'File "{path}" does not exist or is not a regular file.')
         return
 
-    if not path.is_file():
-        error(f'"{path}" is not a file.')
+    if path.suffix.lower() != ".sql":
+        error(f'File "{path}" does not end with ".sql".')
         return
 
     in_quote: str | None = None
     with path.open(mode="r", encoding="utf-8") as f:
-        # Skip all leading blanks and comments, so that the line number
-        # for the first statement we encounter is correct.
-        first_sql_index: int = 0
-        lines: list[str] = []
-        for line in f:
-            if line != "":
-                # Don't want to use rstrip() here, because we want to
-                # preserve trailing whitespace, in case it's inside a quote.
-                if line[-1] == "\n":
-                    line = line[:-1]
+        lines = f.readlines()
 
-            lines.append(line)
+    # First, strip the trailing "\n" from each line. We don't use rstrip()
+    # because we want to preserve trailing whitespace, in case it's inside
+    # a quote.
+    lines = [line[:-1] for line in lines if line != "" and line[-1] == "\n"]
 
-        for i, line in enumerate(lines):
-            first_sql_index = i
+    # Skip all leading blanks and comments, so that the line number
+    # for the first statement we encounter is correct.
+    first_sql_line, adjusted_lines = trim_blanks_and_comments(lines)
+    if first_sql_line == 0:
+        error(f'"{path}" contains no SQL statements.')
+
+    sql: str = ""
+    statement_starting_line: int = first_sql_line
+    for lno, line in enumerate(adjusted_lines, start=statement_starting_line):
+        if len(sql) == 0:
+            # Starting fresh. Mark the starting line of the statement.
+            statement_starting_line = lno
+
+        if not keep_multiline_sql_line(line, in_quote is not None):
+            continue
+
+        if (in_quote is None):
+            # Strip leading and trailing white space if we're not in a quote.
             line = line.strip()
-            if (line == "") or line.startswith(SQL_LINE_COMMENT_PREFIX):
-                continue
 
-            break
+        sql = line if len(sql) == 0 else f"{sql} {line}"
+        complete, in_quote = sql_statement_is_complete(sql)
+        if complete:
+            if not run_sql(sql, engine, limit=0, echo_statement=True):
+                return
 
-        if first_sql_index == len(lines):
-            error(f'"{path}" contains no SQL statements.')
+            sql = ""
 
-        statement: str = ""
-        statement_starting_line: int = first_sql_index + 1
-        for lno, line in enumerate(lines[first_sql_index:],
-                                   start=statement_starting_line):
-            if len(statement) == 0:
-                statement_starting_line = lno
-
-            s = line.strip()
-            # Skip blank lines and SQL comments, provided we're not in a quote.
-            if ((in_quote is None) and
-                (s == "" or s.startswith(SQL_LINE_COMMENT_PREFIX))):
-                continue
-
-            statement += line
-            complete, in_quote = sql_statement_is_complete(statement)
-            if complete:
-                e = run_sql(statement, engine, limit=0, echo_statement=True)
-                print(f"{e=}")
-                if e is not None:
-                    error(e)
-                    break
-
-                statement = ""
-
-        if statement != "":
-            error(f'"{path}", line {statement_starting_line}: File ended with '
-                  "an incomplete SQL statement.")
+    if sql != "":
+        error(f'"{path}", line {statement_starting_line}: File ended with '
+                "an incomplete SQL statement.")
 
 
 def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
@@ -1376,24 +1427,29 @@ def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
         # 1-based.
         readline.remove_history_item(readline.get_current_history_length() - 1)
 
-    statement = first_line
+    sql = first_line if keep_multiline_sql_line(first_line, False) else ""
+
     # Remove the history item corresponding to this line, so we don't get
     # partial lines in the history. We'll add one combined line at the end.
     remove_last_history_item()
     prompt = make_prompt(engine, primary=False)
+    in_quote: str | None = None
     while True:
-        complete, in_quote = sql_statement_is_complete(statement)
-        if complete:
-            break
+        if sql != "":
+            complete, in_quote = sql_statement_is_complete(sql)
+            if complete:
+                break
 
         try:
-            # TODO: Need to deal with the multiline readline input.
             line = input(prompt)
             remove_last_history_item()
-            if in_quote:
-                statement += line
+            if not keep_multiline_sql_line(line, in_quote is not None):
+                continue
+
+            if in_quote or (sql == ""):
+                sql += line
             else:
-                statement += " " + line
+                sql += " " + line
         except EOFError:
             print()
             return
@@ -1401,10 +1457,8 @@ def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
             print()
             return
 
-    readline.add_history(statement)
-    e = run_sql(statement, engine, limit, echo_statement=False)
-    if e is not None:
-        error(e)
+    readline.add_history(sql)
+    run_sql(sql, engine, limit, echo_statement=False)
 
 
 # pylint: disable=too-many-statements
@@ -1435,6 +1489,7 @@ def run_command_loop(
         init_bindings_and_completion(engine)
         return save_history
 
+
     print(colored(f"{NAME}, version {VERSION}\n", "blue", attrs=["bold"]))
 
     e: Engine | None = None
@@ -1448,10 +1503,7 @@ def run_command_loop(
 
     prompt = make_prompt(current_engine)
 
-    print()
-    print(f".help for help on {NAME} commands")
-
-    digits = re.compile(r"^\d+$")
+    print(f"\nType .help for help on {NAME} commands")
 
     limit = 0
     while True:
@@ -1535,7 +1587,7 @@ def run_command_loop(
                 case [Command.LIMIT.value]:
                     print(f"Limit is currently {limit:,}.")
 
-                case [Command.LIMIT.value, s] if digits.match(s) is not None:
+                case [Command.LIMIT.value, s] if DIGITS.match(s) is not None:
                     limit = int(s)
 
                 case [Command.LIMIT.value, _]:
@@ -1581,7 +1633,7 @@ def run_command_loop(
                 case [Command.HISTORY.value]:
                     show_history()
 
-                case [Command.HISTORY.value, n] if digits.match(n) is not None:
+                case [Command.HISTORY.value, n] if DIGITS.match(n) is not None:
                     show_history(int(n))
 
                 case [Command.HISTORY.value, *_]:
@@ -1699,7 +1751,7 @@ def load_config(config: Path) -> Configuration | None:
 )
 @click.version_option(VERSION)
 @click.argument("db_spec", required=True, type=str)
-def main(db_spec: str, history: str, config: str, term: str) -> None:
+def main(db_spec: str, history: str, config: str) -> None:
     """
     Prompt for SQL statements and run them against the specified database.
     The <DB_SPEC> parameter is either a SQLAlchemy-compatible URL or the name
