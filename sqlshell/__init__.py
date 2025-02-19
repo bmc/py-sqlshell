@@ -39,12 +39,13 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import MappingResult
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
+from termcolor import colored
+
 from sqlshell.config import (
     Configuration,
     ConfigurationError,
     load_configuration,
 )
-from termcolor import colored
 
 NAME = "sqlshell"
 VERSION = "0.5.1"
@@ -159,7 +160,7 @@ changed.
     HelpTopic(
         commands=(Command.EXPORT,),
         usage=f"{Command.EXPORT.value} <table> <path>",
-        help=f"""
+        help="""
 Export the contents of table to a file. If <path> ends in ".csv", the table
 will be exported to a CSV file. If <path> ends in ".json", the table will be
 dumped in JSON Lines format, with each row as a JSON object in the file. You
@@ -629,6 +630,7 @@ def print_help(command: str | None = None) -> None:
     :param command: The command for which help is being requested, or None
          for general help on all commands
     """
+    # pylint: disable=too-many-branches,too-many-locals
 
     def collapse_help(text: str) -> str:
         """
@@ -638,7 +640,6 @@ def print_help(command: str | None = None) -> None:
         """
         return MULTI_WHITESPACE.sub(" ", text.strip().replace("\n", " "))
 
-    # pylint: disable=too-many-branches
     help_topics: list[HelpTopic]
 
     if command is None:
