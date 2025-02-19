@@ -27,18 +27,11 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
-from itertools import dropwhile
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict
 from typing import Sequence as Seq
 from typing import Tuple, cast
-
-from sqlshell.config import (
-    Configuration,
-    ConfigurationError,
-    load_configuration,
-)
 
 import click
 import sqlalchemy
@@ -46,6 +39,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.engine.result import MappingResult
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
+from sqlshell.config import (
+    Configuration,
+    ConfigurationError,
+    load_configuration,
+)
 from termcolor import colored
 
 NAME = "sqlshell"
@@ -631,6 +629,7 @@ def print_help(command: str | None = None) -> None:
     :param command: The command for which help is being requested, or None
          for general help on all commands
     """
+
     def collapse_help(text: str) -> str:
         """
         Remove leading and trailing blank lines from a help string, and

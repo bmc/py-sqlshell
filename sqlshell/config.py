@@ -3,11 +3,11 @@ Configuration classes for sqlshell. Separated, to reduce code clutter in
 the main module.
 """
 
-from dataclasses import dataclass
 import os
+import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from string import Template
-import tomllib
 from typing import Any, Self
 
 
