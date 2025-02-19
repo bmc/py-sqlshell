@@ -157,7 +157,16 @@ $ sqlshell postgresql+psycopg2://scott:tiger@localhost/test
 Suppose, instead, my "test" database is in a MySQL server running on my
 local machine, with the same user ("scott") and terrible password ("tiger").
 I've decided to use the `mysql-connector-python` package to access MySQL
-from Python. The first step is to install that package:
+from Python. Note: If you install `mysql-connector`, instead of
+`mysql-connector-python`, you may encounter issues, such as this one:
+
+> Unable to connect to mysql+mysqlconnector://scott:tigeter@localhost/db:
+> (mysql.connector.errors.NotSupportedError) Authentication plugin
+> 'caching_sha2_password' is not supported
+
+Be sure to install `mysql-connector-python`, instead.
+
+The first step is to install that package:
 
 ```shell
 $ pip install mysql-connector-python
