@@ -65,6 +65,10 @@ build-backend = "setuptools.build_meta"
 # Ignore the "docker" subdirectory. It's not a Python package, but
 # setuptools will bundle it in the wheel if it's not explicitly excluded.
 exclude = ["docker*"]
+# list of folders that contain the packages (["."] by default)
+where = ["."]
+# package names should match these glob patterns (["*"] by default)
+include = ["sqlshell*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "sqlshell.VERSION"}

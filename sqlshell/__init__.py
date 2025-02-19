@@ -27,11 +27,18 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
+from itertools import dropwhile
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, Dict, Self
+from typing import Any, Callable, Dict
 from typing import Sequence as Seq
-from typing import TextIO, Tuple, cast
+from typing import Tuple, cast
+
+from sqlshell.config import (
+    Configuration,
+    ConfigurationError,
+    load_configuration,
+)
 
 import click
 import sqlalchemy
@@ -42,7 +49,7 @@ from sqlalchemy.schema import CreateTable
 from termcolor import colored
 
 NAME = "sqlshell"
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -56,6 +63,8 @@ DEFAULT_HISTORY_FILE = Path("~/.sqlshell-history").expanduser()
 DEFAULT_CONFIG_FILE = Path("~/.sqlshell.cfg").expanduser()
 SQL_LINE_COMMENT_PREFIX = "--"
 DIGITS = re.compile(r"^\d+$")
+MULTI_WHITESPACE = re.compile(r"\s\s\s*")
+
 
 class EngineName(StrEnum):
     """
@@ -90,63 +99,19 @@ class Command(StrEnum):
     URL = ".url"
 
 
-@dataclass(frozen=True)
-class ConnectionConfig:
+class CommandConstants(StrEnum):
     """
-    A single connection configuration from the configuration file.
-    """
-
-    name: str
-    url: str
-    history_file: Path | None
-
-
-class Configuration:
-    """
-    Represents the parsed configuration data.
+    Constants related to commands. These need to be in an Enum so that they
+    can be used in a match statement.
     """
 
-    def __init__(
-        self: Self, configs: list[ConnectionConfig], path: Path
-    ) -> None:
-        """
-        Initialize a Configuration object.
-        """
-        self._configs = configs
-        self._path = path
-
-    @property
-    def path(self: Self) -> Path:
-        """
-        Returns the path associated with the configuration.
-        """
-        return self._path
-
-    def lookup(self: Self, spec: str) -> list[ConnectionConfig] | None:
-        """
-        Uses a string to look up a configuration. Returns a list of matching
-        configurations, or None if no match.
-        """
-        matches = [
-            c for c in self._configs if c.name.lower().startswith(spec.lower())
-        ]
-
-        if len(matches) == 0:
-            return None
-
-        return matches
+    IMPORT_NEW_TABLE_ONLY = "-n"
 
 
 class SQLShellException(Exception):
     """
     Base class for exceptions thrown by the SQL shell. Also thrown explicitly
     for certain errors in the SQL shell.
-    """
-
-
-class ConfigurationError(SQLShellException):
-    """
-    Thrown to indicate a configuration error.
     """
 
 
@@ -163,131 +128,147 @@ class TooManyMatchesError(SQLShellException):
     """
 
 
-# This is a series of (command(s), explanation) tuples. print_help() will wrap
-# the explanations.
-HELP: Seq[Tuple[Seq[str], str, str]] = (
-    (
-        (Command.QUIT1.value, Command.QUIT2.value),
-        f"{Command.QUIT1.value}, {Command.QUIT2.value}, or Ctrl-D",
-        f"Quit {NAME}.",
+@dataclass(frozen=True)
+class HelpTopic:
+    """
+    A help topic, consisting of a command or commands, a usage line, and
+    help text. The help text can be a multi-line string, for readability. The
+    newlines will be removed.
+    """
+
+    commands: Seq[Command]
+    usage: str
+    help: str
+
+
+HELP: Seq[HelpTopic] = (
+    HelpTopic(
+        commands=(Command.QUIT1, Command.QUIT2),
+        usage=f"{Command.QUIT1.value} or {Command.QUIT2.value} or Ctrl-D",
+        help=f"Quit {NAME}.",
     ),
-    (
-        (Command.CONNECT.value,),
-        f"{Command.CONNECT.value} <name>",
-        "Connect to a different database. <name> is either a full SQLAlchemy "
-        "URL or the name of a section in the configuration file. If <name> is "
-        "a configuration file section, you only need to specify enough of the "
-        "string to be unique. If it's not unique, you'll see an error message, "
-        "and the current database will not be changed.",
+    HelpTopic(
+        commands=(Command.CONNECT,),
+        usage=f"{Command.CONNECT.value} <name>",
+        help="""
+Connect to a different database. <name> is either a full SQLAlchemy URL or the
+name of a section in the configuration file. If <name> is a configuration file
+section, you only need to specify enough of the string to be unique. If it's
+not unique, you'll see an error message, and the current database will not be
+changed.
+""",
     ),
-    (
-        (Command.EXPORT.value,),
-        f"{Command.EXPORT.value} <table> <path>",
-        'Export the contents of table to a file. If <path> ends in ".csv", '
-        'the table will be exported to a CSV file. If <path> ends in ".json", '
-        "the table will be dumped in JSON Lines format, with each row as a "
-        "JSON object in the file. You can use ~ in your paths as a shorthand "
-        'for your home directory (e.g., "~/table.json")',
+    HelpTopic(
+        commands=(Command.EXPORT,),
+        usage=f"{Command.EXPORT.value} <table> <path>",
+        help=f"""
+Export the contents of table to a file. If <path> ends in ".csv", the table
+will be exported to a CSV file. If <path> ends in ".json", the table will be
+dumped in JSON Lines format, with each row as a JSON object in the file. You
+can use ~ in your paths as a shorthand for your home directory
+(e.g., "~/table.json")',
+""",
     ),
-    (
-        (Command.FKEYS.value,),
-        f"{Command.FKEYS.value} <table_name>",
-        "Display the list of foreign keys for a table. Note: <table_name> is "
-        "the table with the foreign key constraints, not the table the "
-        "foreign key(s) reference.",
+    HelpTopic(
+        commands=(Command.FKEYS,),
+        usage=f"{Command.FKEYS.value} <table_name>",
+        help="""
+Display the list of foreign keys for a table. Note: <table_name> is the table
+with the foreign key constraints, not the table the foreign key(s) reference.
+""",
     ),
-    (
-        (Command.HELP1.value, Command.HELP2.value),
-        f"{Command.HELP1.value} or {Command.HELP2.value} [<command>]",
-        "Show help for <command>. If <command> is omitted, show help for "
-        "all commands.",
+    HelpTopic(
+        commands=(Command.HELP1, Command.HELP2),
+        usage=f"{Command.HELP1.value} or {Command.HELP2.value} [<command>]",
+        help="""
+Show help for <command>. If <command> is omitted, show help for all commands.
+""",
     ),
-    (
-        (Command.HISTORY.value,),
-        f"{Command.HISTORY.value} [<n>]",
-        "Show the history. If <n> is supplied, show the last <n> history "
-        "items. <n> of 0 is the same as omitting <n>.",
+    HelpTopic(
+        commands=(Command.HISTORY,),
+        usage=f"{Command.HISTORY.value} [<n> | <re>]",
+        help=r"""
+Show the history. If <n>, an integer, is supplied, show the last <n> history
+items. An <n> of 0 is the same as omitting <n>. If <re> is supplied, show all
+history items that match the regular expression <re>. If your pattern contains
+spaces or regular expression backslash sequences (e.g., \s), be sure to enclose
+it in quotes.
+""",
     ),
-    (
-        (Command.HISTORY.value,),
-        f"{Command.HISTORY.value} re",
-        "Show all history items matching regular expression <re>. If your "
-        "pattern contains spaces or regular expression backslash sequences "
-        r"(e.g., \s), be sure to enclose it in quotes.",
+    HelpTopic(
+        commands=(Command.IMPORT,),
+        usage=(
+            f"{Command.IMPORT.value} "
+            f"[{CommandConstants.IMPORT_NEW_TABLE_ONLY.value}] <table> <path>"
+        ),
+        help=f"""
+Import a CSV or JSON file into a table. If the table exists,
+{Command.IMPORT.value} will try to append to it. If the table doesn't exist,
+it will be created. If {CommandConstants.IMPORT_NEW_TABLE_ONLY.value} (for
+"new-only") is specified, the table must not already exist; the command will
+abort if it does. If <path> ends in ".csv", the file is assumed to be a CSV
+file. If <path> ends in ".json", the file is assumed to be a JSON Lines file,
+as if it were produced by the .export command. You can use ~ as a shorthand
+for your home directory. This command uses Pandas to import the file, so it
+will attempt to infer a schema. It can't, however, infer a primary key or
+any foreign keys. If you need those, you can add them manually after the
+import, or you can precreate an empty table with appropriate constraints,
+before importing the file. Note also that Pandas' schema inference isn't
+perfect, especially with a column where all the incoming values are NULL. You
+may need to alter the table's column types after the import. On import, all
+column names are forced to lower case, so that column names don't require
+quoting in databases like Postgres. Also, if the column names in the incoming
+data are incompatible with a database's naming format, the import will fail.
+""",
     ),
-    (
-        (Command.IMPORT.value,),
-        f"{Command.IMPORT.value} [-n] <table> <path>",
-        "Import a CSV or JSON file into a table. If the table exists, "
-        f"f{Command.IMPORT.value} will append to it. If the table does not "
-        'exist, it will be created. If -n (for "new-only") is specified, the '
-        "table must not already exist; the command will abort if it does. If "
-        '<path> ends in ".csv", the file is assumed to be a CSV file. If '
-        '<path> ends in ".json", the file is assumed to be a JSON Lines file, '
-        f"as if it were produced by the f{Command.EXPORT.value} command. You "
-        "can use ~ as a shorthand for your home directory. This command uses "
-        "Pandas import the file, so it will attempt to infer a schema. It "
-        "can't however, infer a primary key or any foreign keys. If you need "
-        "those, you can add them manually after the import, or you can "
-        "precreate an empty table with appropriate constraints. Note also "
-        "that Pandas' schema inference isn't perfect, especially with a column "
-        "where all the incoming values are NULL. You may need to alter the "
-        "table's column types after the import. On import, all column names "
-        "are forced to lower case, so that column names don't require quoting "
-        "in databases like Postgres. Also, if the column names in the incoming "
-        "data are incompatible with a database's naming format, the import "
-        "will fail.",
+    HelpTopic(
+        commands=(Command.INDEXES,),
+        usage=f"{Command.INDEXES.value} <table_name>",
+        help="""
+Display the indexes for <table_name>. Uses database-native commands, where
+possible. Otherwise, SQLAlchemy index information is displayed.
+""",
     ),
-    (
-        (Command.INDEXES.value,),
-        f"{Command.INDEXES.value} <table_name>",
-        "Display the indexes for <table_name>. Uses database-native commands, "
-        "where possible. Otherwise, SQLAlchemy index information is displayed.",
+    HelpTopic(
+        commands=(Command.LIMIT,),
+        usage=f"{Command.LIMIT.value} [<n>]",
+        help="""
+Show only <n> rows from a SELECT. 0 means unlimited. If <n> is omitted, show
+the current {Command.LIMIT.value} setting.
+""",
     ),
-    (
-        (Command.LIMIT.value,),
-        f"{Command.LIMIT.value} <n>",
-        "Show only <n> rows from a SELECT. 0 means unlimited.",
+    HelpTopic(
+        commands=(Command.RUN,),
+        usage=f"{Command.RUN.value} <path>",
+        help="""
+Run a SQL script file. The file can contain multiple SQL statements, and each
+statement can be on a single line or span multiple lines. SQL statements in
+the file must end with an unquoted ";". Newlines in SQL statements are not
+preserved and will be replaced with a single space. Multi-line statements will
+be sent to the database as a single SQL statement, which will be echoed to the
+screen as it is run. Note that the path must end in ".sql", or it will not be
+run. In the path, you can use ~ as a shorthand for your home directory.
+""",
     ),
-    (
-        (Command.LIMIT.value,),
-        f"{Command.LIMIT.value}",
-        "Show the current limit setting",
+    HelpTopic(
+        commands=(Command.SCHEMA,),
+        usage=f"{Command.SCHEMA.value} <table>",
+        help="Show the schema for table <table>.",
     ),
-    (
-        (Command.RUN.value,),
-        f"{Command.RUN.value} <path>",
-        "Run a SQL script file. The file can contain multiple SQL statements, "
-        "and each statement can be on a single line or span multiple lines. "
-        'SQL statements in the file must end with an unquoted ";". Newlines in '
-        "SQL statements are not preserved and will be replaced with a single "
-        "space. Multi-line statements will be sent to the database as a single "
-        "SQL statement, which will be echoed to the screen as it is run. Note "
-        'that the path must end in ".sql", or it will not be run. In the path, '
-        "you can use ~ as a shorthand for your home directory."
+    HelpTopic(
+        commands=(Command.TABLES,),
+        usage=f"{Command.TABLES.value} [<re>]",
+        help=r"""
+List the names of all tables in the database. If <re> is supplied, show only
+the tables that match the specified regular expression. Matching is case-blind.
+If your pattern contains spaces or regular expression backslash sequences
+(e.g., \s), be sure to enclose it in quotes.
+""",
     ),
-    (
-        (Command.SCHEMA.value,),
-        f"{Command.SCHEMA.value} <table>",
-        "Show the schema for table <table>.",
-    ),
-    (
-        (Command.TABLES.value,),
-        f"{Command.TABLES.value}",
-        "List the names of all tables in the database.",
-    ),
-    (
-        (Command.TABLES.value,),
-        f"{Command.TABLES.value} <re>",
-        "Show the names of all tables in the database that match the specified "
-        "regular expression. Matching is case-blind. If your pattern contains "
-        r"spaces or regular expression backslash sequences (e.g., \s), be sure "
-        "to enclose it in quotes.",
-    ),
-    (
-        (Command.URL.value,),
-        f"{Command.URL.value}",
-        "Show the current database URL",
+    HelpTopic(
+        commands=(Command.URL,),
+        usage=f"{Command.URL.value}",
+        help="Show the current SQLAlchemy database URL.",
     ),
 )
 
@@ -296,13 +277,11 @@ HELP_EPILOG = (
     "and multi-line input is supported. Newlines are not preserved, and a"
     "a multi-line statement is sent to the database and written to the history "
     "as a single line.",
-
     "",
-
     "Note that you can use tab-completion on the dot-commands. Also, as a "
     "special case, you can tab-complete available table names after typing "
     f'"{Command.SCHEMA.value}" or "{Command.INDEXES.value}". Completion for '
-    "SQL statements is not available."
+    "SQL statements is not available.",
 )
 
 
@@ -588,6 +567,7 @@ def run_sql(
     :returns: True if it ran successfully. False if it failed (and an error
         was reported).
     """
+
     def execute_sql(sql: str) -> None:
         """
         Execute the SQL statement and display the results. Raises an
@@ -615,7 +595,6 @@ def run_sql(
             )
 
         session.commit()
-
 
     try:
         if echo_statement:
@@ -652,23 +631,34 @@ def print_help(command: str | None = None) -> None:
     :param command: The command for which help is being requested, or None
          for general help on all commands
     """
+    def collapse_help(text: str) -> str:
+        """
+        Remove leading and trailing blank lines from a help string, and
+        replace all newlines with blanks. Also, collapse adjacent blanks into
+        a single blank.
+        """
+        return MULTI_WHITESPACE.sub(" ", text.strip().replace("\n", " "))
+
     # pylint: disable=too-many-branches
+    help_topics: list[HelpTopic]
+
     if command is None:
         help_topics = list(HELP)
     else:
         # Print help on only the entries that match the command string.
         help_topics = []
-        for commands, prefix, text in HELP:
-            if command in commands:
-                help_topics.append((commands, prefix, text))
+        for topic in HELP:
+            command_strs = [cmd.value for cmd in topic.commands]
+            if command in command_strs:
+                help_topics.append(topic)
 
         if len(help_topics) == 0:
             error(f'Unknown command "{command}".')
             return
 
-    prefix_width = 0
-    for _, prefix, _ in help_topics:
-        prefix_width = max(prefix_width, len(prefix))
+    prefix_width: int = 0
+    for topic in help_topics:
+        prefix_width = max(prefix_width, len(topic.usage))
 
     # How much room do we have left for text? Allow for separating " - ".
 
@@ -679,9 +669,10 @@ def print_help(command: str | None = None) -> None:
         # Screw it. Just pick some value.
         text_width = DEFAULT_SCREEN_WIDTH // 2
 
-    for _, prefix, text in help_topics:
-        padded_prefix = prefix.ljust(prefix_width)
-        text_lines = textwrap.wrap(text, width=text_width)
+    for topic in help_topics:
+        padded_prefix = topic.usage.ljust(prefix_width)
+        adj_help = collapse_help(topic.help)
+        text_lines = textwrap.wrap(adj_help, width=text_width)
         print(f"{padded_prefix}{separator}{text_lines[0]}")
         for text_line in text_lines[1:]:
             padding = " " * (prefix_width + len(separator))
@@ -1093,7 +1084,10 @@ def import_table(
     tables = get_tables(engine)
     exists = any(t.name.lower() == table_name.lower() for t in tables)
     if exists and not exist_ok:
-        error(f'Table "{table_name}" already exists, and you specified -n.')
+        error(
+            f'Table "{table_name}" already exists, and you specified '
+            f"{CommandConstants.IMPORT_NEW_TABLE_ONLY.value}."
+        )
         return
 
     # With Postgres, if the column names in the incoming Pandas data frame
@@ -1262,6 +1256,7 @@ def connect_to_new_db(
         error(f"Unable to connect to {url}: {e}")
         return (None, history_file)
 
+
 def make_prompt(engine: Engine, primary: bool = True) -> str:
     """
     Make the prompt for the command loop.
@@ -1295,7 +1290,7 @@ def sql_statement_is_complete(s: str) -> Tuple[bool, str | None]:
         elif c in ('"', "'"):
             in_quote = c
 
-    complete = (in_quote is None) and s.endswith(';')
+    complete = (in_quote is None) and s.endswith(";")
     return (complete, in_quote)
 
 
@@ -1327,6 +1322,7 @@ def read_and_run_sql_file(path: Path, engine: Engine) -> None:
 
     :param path: the path to the SQL file
     """
+
     def trim_blanks_and_comments(lines: list[str]) -> Tuple[int, list[str]]:
         """
         Skips all leading and trailing blank lines and comments in the list
@@ -1336,6 +1332,7 @@ def read_and_run_sql_file(path: Path, engine: Engine) -> None:
         blanks and SQL comments, the returned line number will be 0 and the
         returned list will be empty.
         """
+
         def trim_them(the_lines: list[str]) -> Tuple[int, list[str]]:
             lno: int = 0
             new_lines: list[str] = the_lines
@@ -1397,7 +1394,7 @@ def read_and_run_sql_file(path: Path, engine: Engine) -> None:
         if not keep_multiline_sql_line(line, in_quote is not None):
             continue
 
-        if (in_quote is None):
+        if in_quote is None:
             # Strip leading and trailing white space if we're not in a quote.
             line = line.strip()
 
@@ -1410,8 +1407,10 @@ def read_and_run_sql_file(path: Path, engine: Engine) -> None:
             sql = ""
 
     if sql != "":
-        error(f'"{path}", line {statement_starting_line}: File ended with '
-                "an incomplete SQL statement.")
+        error(
+            f'"{path}", line {statement_starting_line}: File ended with '
+            "an incomplete SQL statement."
+        )
 
 
 def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
@@ -1419,6 +1418,7 @@ def read_and_run_sql(first_line: str, engine: Engine, limit: int) -> None:
     Given the first line of what might be a multi-line SQL statement, read
     the rest of the statement (if necessary), and run it.
     """
+
     def remove_last_history_item() -> None:
         """
         Remove the last history item, which is most recently-read line.
@@ -1489,7 +1489,6 @@ def run_command_loop(
         init_bindings_and_completion(engine)
         return save_history
 
-
     print(colored(f"{NAME}, version {VERSION}\n", "blue", attrs=["bold"]))
 
     e: Engine | None = None
@@ -1516,7 +1515,7 @@ def run_command_loop(
                 case []:
                     pass
 
-                case [(Command.QUIT1.value | Command.QUIT2.value)]:
+                case [Command.QUIT1.value | Command.QUIT2.value]:
                     break
 
                 case [(Command.QUIT1.value | Command.QUIT2.value), *_]:
@@ -1541,7 +1540,7 @@ def run_command_loop(
                 case [Command.CONNECT.value, *_]:
                     print(f"Usage: {Command.CONNECT.value} <db_spec>")
 
-                case [(Command.HELP1.value | Command.HELP2.value)]:
+                case [Command.HELP1.value | Command.HELP2.value]:
                     print_help()
 
                 case [(Command.HELP1.value | Command.HELP2.value), topic]:
@@ -1567,7 +1566,12 @@ def run_command_loop(
                         exist_ok=True,
                     )
 
-                case [Command.IMPORT.value, "-n", table_name, path]:
+                case [
+                    Command.IMPORT.value,
+                    CommandConstants.IMPORT_NEW_TABLE_ONLY,
+                    table_name,
+                    path,
+                ]:
                     import_table(
                         table_name=table_name,
                         import_file=Path(path),
@@ -1576,7 +1580,11 @@ def run_command_loop(
                     )
 
                 case [Command.IMPORT.value, *_]:
-                    print(f"Usage: {Command.IMPORT.value} [-n] <table> <path>")
+                    print(
+                        f"Usage: {Command.IMPORT.value} "
+                        f"[{CommandConstants.IMPORT_NEW_TABLE_ONLY}] "
+                        "<table> <path>"
+                    )
 
                 case [Command.INDEXES.value, table_name]:
                     show_indexes(table_name, current_engine)
@@ -1660,76 +1668,6 @@ def run_command_loop(
             continue
 
 
-def load_config(config: Path) -> Configuration | None:
-    """
-    Reads the configuration file, if it exists. Returns a dictionary
-    where the keys are names (sections) from the configuration and the
-    values are ConnectionConfig objects. The dictionary will be empty,
-    if there is no configuration file or if the configuration file is
-    empty. Raises ConfigurationError on error.
-
-    :param config: Path to the configuration file, which does not have to
-        exist
-    """
-    # These two imports are deliberately inside the function, because
-    # they are implementation-dependent. We don't want to import them at
-    # the top, because if we change how the configuration is loaded, it
-    # should be isolated completely in here.
-    # pylint: disable=import-outside-toplevel
-    import tomllib
-    from string import Template
-
-    assert config.exists()
-
-    try:
-        with open(config, mode="rb") as f:
-            data = tomllib.load(f)
-    except Exception as e:
-        # pylint: disable=raise-missing-from
-        raise ConfigurationError(f'Unable to read "{config}": {e}')
-
-    class EnvDict(dict):
-        """
-        For environment substitution, we want a reference to a non-existent
-        variable to substitute "", rather than throw an error (as with
-        Template.substitute()) or leave the reference intact (as with
-        Template.safe_substitute()). To do that, we simply use a custom
-        dictionary class.
-        """
-
-        def __init__(self: Self, *args, **kw) -> None:
-            """Initialize the dictionary"""
-            self.update(*args, **kw)
-
-        def __getitem__(self: Self, key: Any) -> Any:
-            """Get an item from the dictionary"""
-            return super().get(key, "")
-
-    env = EnvDict(**os.environ)
-
-    configs: list[ConnectionConfig] = []
-    for key, values in data.items():
-        url = values.get("url")
-        if url is None:
-            raise ConfigurationError(
-                f'"{config}": Section "{key}" has no "url" setting.'
-            )
-
-        t = Template(url)
-        url = t.substitute(env)
-
-        history = values.get("history")
-        if history is not None:
-            t = Template(history)
-            history = Path(t.substitute(env)).expanduser()
-
-        configs.append(
-            ConnectionConfig(name=key, url=url, history_file=history)
-        )
-
-    return Configuration(configs=configs, path=config)
-
-
 @click.command(name=NAME, context_settings=CLICK_CONTEXT_SETTINGS)
 @click.option(
     "-H",
@@ -1797,7 +1735,7 @@ def main(db_spec: str, history: str, config: str) -> None:
         elif not p_config.is_file():
             raise AbortError(f'Configuration file "{config}" is not a file.')
         else:
-            configuration = load_config(Path(config))
+            configuration = load_configuration(Path(config))
 
         run_command_loop(db_spec, configuration, Path(history))
 
