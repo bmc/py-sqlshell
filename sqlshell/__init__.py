@@ -48,7 +48,7 @@ from sqlshell.config import (
 )
 
 NAME = "sqlshell"
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
@@ -572,6 +572,7 @@ def run_sql(
         Execute the SQL statement and display the results. Raises an
         exception if there's an error.
         """
+        start = perf_counter()
         with session.execute(sqlalchemy.text(sql)) as cursor:
             mappings = cursor.mappings()
             columns = list(mappings.keys())
@@ -599,7 +600,6 @@ def run_sql(
         if echo_statement:
             print(f"{sql}\n")
 
-        start = perf_counter()
         with Session(engine) as session:
             try:
                 execute_sql(sql)
