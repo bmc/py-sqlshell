@@ -98,6 +98,15 @@ class Command(StrEnum):
     URL = ".url"
 
 
+class ReadlineBackend(StrEnum):
+    """
+    The backend used by the readline library. This is used to determine
+    which initialization file to load.
+    """
+    READLINE = 'readline'
+    EDITLINE = 'editline'
+
+
 class CommandConstants(StrEnum):
     """
     Constants related to commands. These need to be in an Enum so that they
@@ -325,6 +334,20 @@ def get_tables(engine: Engine) -> list[sqlalchemy.Table]:
     return sorted(list(metadata.tables.values()), key=lambda t: t.name.lower())
 
 
+def readline_backend() -> ReadlineBackend:
+    if sys.version_info.minor >= 13:
+        match readline.backend:
+            case 'readline':
+                return ReadlineBackend.READLINE
+            case 'editline':
+                return ReadlineBackend.EDITLINE
+
+    elif (readline.__doc__ is not None) and ("libedit" in readline.__doc__):
+        return ReadlineBackend.EDITLINE
+    else:
+        return ReadlineBackend.READLINE
+
+
 def init_history(
     history_path: Path, prev_func: Callable[[], None] | None = None
 ) -> Callable[[], None]:
@@ -419,14 +442,15 @@ def init_bindings_and_completion(engine: Engine) -> None:
 
         return None
 
-    if (readline.__doc__ is not None) and ("libedit" in readline.__doc__):
-        init_file = EDITLINE_BINDINGS_FILE
-        print("Using editline (libedit).")
-        completion_binding = "bind '^I' rl_complete"
-    else:
-        print("Using GNU readline.")
-        init_file = READLINE_BINDINGS_FILE
-        completion_binding = "Control-I: rl_complete"
+    match readline_backend():
+        case ReadlineBackend.EDITLINE:
+            print("Using editline (libedit).")
+            init_file = EDITLINE_BINDINGS_FILE
+            completion_binding = "bind '^I' rl_complete"
+        case ReadlineBackend.READLINE:
+            print("Using GNU readline.")
+            init_file = READLINE_BINDINGS_FILE
+            completion_binding = "Control-I: rl_complete"
 
     if init_file.exists():
         print(f'Loading bindings from "{init_file}"')
