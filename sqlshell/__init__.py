@@ -48,7 +48,7 @@ from sqlshell.config import (
 )
 
 NAME = "sqlshell"
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 CLICK_CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 HISTORY_LENGTH = 10000
 # Note that Python's readline library can be based on GNU Readline
